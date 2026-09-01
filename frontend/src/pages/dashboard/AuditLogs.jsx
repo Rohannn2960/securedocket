@@ -54,43 +54,88 @@ export function AuditLogs() {
 
   return (
     <div className="space-y-6">
-      {/* Header and Chain Verification Trigger */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <Link2 className="w-5 h-5 text-indigo-400" />
-            Cryptographic Audit Hash Chain
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Immutable, hash-linked log of all document actions, accesses, and modifications for judicial non-repudiation.
-          </p>
-        </div>
-        <Button
-          variant="emerald"
-          icon={RefreshCw}
-          isLoading={verifying}
-          onClick={handleVerifyChain}
-        >
-          Verify Complete Chain Integrity
-        </Button>
+      {/* Header */}
+      <div>
+        <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+          <Link2 className="w-5 h-5 text-cyan-400" />
+          Cryptographic Audit Hash Chain
+        </h2>
+        <p className="text-xs text-slate-400 mt-0.5">
+          Immutable, hash-linked cryptographic chain of all document actions, views, and modifications for judicial non-repudiation.
+        </p>
       </div>
 
-      {/* Chain Status Result Banner */}
-      {chainStatus && (
-        <Alert
-          variant={chainStatus.valid ? 'success' : 'error'}
-          title={chainStatus.valid ? 'Chain Integrity Verified' : 'Chain Integrity Compromised'}
-        >
-          {chainStatus.valid ? (
-            `Verified ${chainStatus.checkedEntries} sequential cryptographic entries. All previous-to-current block SHA-256 links match zero modifications or deletions. Verified at ${formatDate(chainStatus.verifiedAt)}.`
-          ) : (
-            `Failed verification at entry ${chainStatus.firstBrokenEntry}. Reason: ${chainStatus.reason}.`
-          )}
-        </Alert>
-      )}
+      {/* Prominent Verification Status Box */}
+      <div className={`p-6 rounded-2xl border transition-all ${
+        verifying
+          ? 'bg-cyan-950/40 border-cyan-500/50 shadow-glow-cyan'
+          : !chainStatus
+          ? 'bg-defense-900/80 border-slate-800'
+          : chainStatus.valid
+          ? 'bg-emerald-950/40 border-emerald-500/50 shadow-glow-emerald'
+          : 'bg-rose-950/40 border-rose-500/50 shadow-glow-rose'
+      }`}>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-mono text-slate-400 uppercase tracking-wider">
+                Cryptographic Chain State:
+              </span>
+              <Badge
+                variant={
+                  verifying
+                    ? 'cyan'
+                    : !chainStatus
+                    ? 'default'
+                    : chainStatus.valid
+                    ? 'verified'
+                    : 'tampered'
+                }
+                size="xs"
+              >
+                {verifying
+                  ? 'VERIFYING...'
+                  : !chainStatus
+                  ? 'INTEGRITY STATUS UNKNOWN'
+                  : chainStatus.valid
+                  ? 'CHAIN INTEGRITY VERIFIED'
+                  : 'CHAIN INTEGRITY COMPROMISED'}
+              </Badge>
+            </div>
+
+            <div className="text-sm font-semibold text-slate-100">
+              {verifying ? (
+                'Executing server-side SHA-256 sequential block verification across entire audit ledger...'
+              ) : !chainStatus ? (
+                'Integrity status unknown. Click below to compute and verify the cryptographic hash chain.'
+              ) : chainStatus.valid ? (
+                `CHAIN INTEGRITY VERIFIED: All ${chainStatus.checkedEntries} sequential cryptographic entries mathematically confirmed intact without tampering.`
+              ) : (
+                `CHAIN INTEGRITY COMPROMISED: Hash mismatch detected at block index ${chainStatus.firstBrokenEntry}. Reason: ${chainStatus.reason}`
+              )}
+            </div>
+
+            {chainStatus?.verifiedAt && (
+              <div className="text-[11px] font-mono text-slate-400">
+                Last Verified: {formatDate(chainStatus.verifiedAt)} • Genesis: 00000000...0000
+              </div>
+            )}
+          </div>
+
+          <Button
+            variant={chainStatus?.valid ? 'primary' : 'primary'}
+            icon={RefreshCw}
+            isLoading={verifying}
+            onClick={handleVerifyChain}
+            className="shrink-0"
+          >
+            {verifying ? 'Verifying Chain...' : 'Verify Chain Integrity'}
+          </Button>
+        </div>
+      </div>
 
       {/* Chained Blocks Timeline */}
-      <div className="space-y-4 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-800 before:to-transparent">
+      <div className="space-y-4">
         {auditLogs.map((log, index) => (
           <div
             key={log._id}

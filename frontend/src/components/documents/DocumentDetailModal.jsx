@@ -612,6 +612,56 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
           </div>
         )}
 
+        {/* Extracted Entities & Case Cross-References */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+            <User className="w-4 h-4 text-cyan-400" />
+            <span>Extracted Entities & Cross-References</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            {/* Persons */}
+            <div className="p-3 rounded-xl bg-defense-900/60 border border-slate-800 space-y-1">
+              <span className="text-[10px] text-slate-500 font-mono uppercase block">Identified Persons</span>
+              <div className="text-xs text-slate-200 font-medium space-y-0.5">
+                {extractedFields.accusedName?.value || extractedFields.complainantName?.value || extractedFields.witnessName?.value || extractedFields.personName?.value ? (
+                  <>
+                    {extractedFields.accusedName?.value && <div>• Accused: {String(extractedFields.accusedName.value)}</div>}
+                    {extractedFields.complainantName?.value && <div>• Complainant: {String(extractedFields.complainantName.value)}</div>}
+                    {extractedFields.witnessName?.value && <div>• Witness: {String(extractedFields.witnessName.value)}</div>}
+                  </>
+                ) : (
+                  <span className="text-slate-500 italic">No person entities identified</span>
+                )}
+              </div>
+            </div>
+
+            {/* Locations */}
+            <div className="p-3 rounded-xl bg-defense-900/60 border border-slate-800 space-y-1">
+              <span className="text-[10px] text-slate-500 font-mono uppercase block">Crime Scenes & Locations</span>
+              <div className="text-xs text-slate-200 font-medium">
+                {extractedFields.placeOfOccurrence?.value || extractedFields.location?.value || extractedFields.address?.value ? (
+                  <div>• {String(extractedFields.placeOfOccurrence?.value || extractedFields.location?.value || extractedFields.address?.value)}</div>
+                ) : (
+                  <span className="text-slate-500 italic">No specific location extracted</span>
+                )}
+              </div>
+            </div>
+
+            {/* Evidence & Items */}
+            <div className="p-3 rounded-xl bg-defense-900/60 border border-slate-800 space-y-1">
+              <span className="text-[10px] text-slate-500 font-mono uppercase block">Physical & Forensic Tags</span>
+              <div className="text-xs text-slate-200 font-medium">
+                {extractedFields.firNumber?.value || extractedFields.exhibitNumber?.value || extractedFields.seizedItems?.value ? (
+                  <div>• {String(extractedFields.firNumber?.value || extractedFields.exhibitNumber?.value || extractedFields.seizedItems?.value)}</div>
+                ) : (
+                  <span className="text-slate-500 italic">Standard case exhibit</span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Version History Infrastructure */}
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
