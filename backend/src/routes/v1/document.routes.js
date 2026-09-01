@@ -6,6 +6,11 @@ const {
   getDocumentViewUrl,
   getDocumentDownloadUrl,
   streamVaultDocument,
+  createDocumentVersion,
+  getDocumentVersions,
+  getDocumentVersion,
+  getVersionViewUrl,
+  compareDocumentVersions,
 } = require('../../controllers/document.controller');
 const { requireAuth } = require('../../middleware/auth.middleware');
 const { requireRole } = require('../../middleware/rbac.middleware');
@@ -37,6 +42,42 @@ router.post(
   asyncWrapper(uploadDocument)
 );
 
+// GET /api/v1/documents/:id/versions/compare (Compare two versions)
+router.get(
+  '/:id/versions/compare',
+  requireRole(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN, ROLES.AUDITOR),
+  asyncWrapper(compareDocumentVersions)
+);
+
+// GET /api/v1/documents/:id/versions/:versionNumber/view (Presigned View URL for specific version)
+router.get(
+  '/:id/versions/:versionNumber/view',
+  requireRole(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN, ROLES.AUDITOR),
+  asyncWrapper(getVersionViewUrl)
+);
+
+// GET /api/v1/documents/:id/versions/:versionNumber (Get specific version record)
+router.get(
+  '/:id/versions/:versionNumber',
+  requireRole(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN, ROLES.AUDITOR),
+  asyncWrapper(getDocumentVersion)
+);
+
+// GET /api/v1/documents/:id/versions (List all versions of a document)
+router.get(
+  '/:id/versions',
+  requireRole(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN, ROLES.AUDITOR),
+  asyncWrapper(getDocumentVersions)
+);
+
+// POST /api/v1/documents/:id/versions (Create new document version / revision: Officer, Verifier, Admin)
+router.post(
+  '/:id/versions',
+  requireRole(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN),
+  handleSingleUpload('file'),
+  asyncWrapper(createDocumentVersion)
+);
+
 // GET /api/v1/documents/:id/view (Generate 5-Minute Presigned View URL)
 router.get(
   '/:id/view',
@@ -59,3 +100,4 @@ router.get(
 );
 
 module.exports = router;
+

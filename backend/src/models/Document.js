@@ -3,9 +3,13 @@ const { ALL_DOCUMENT_TYPES, ALL_DOCUMENT_STATUSES, DOCUMENT_STATUS } = require('
 
 const documentVersionSchema = new mongoose.Schema(
   {
-    version: {
+    versionNumber: {
       type: Number,
       required: true,
+      min: 1,
+    },
+    version: {
+      type: Number,
       min: 1,
     },
     s3Key: {
@@ -23,22 +27,42 @@ const documentVersionSchema = new mongoose.Schema(
     mimeType: {
       type: String,
     },
+    editedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
     uploadedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
     },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
     uploadedAt: {
       type: Date,
       default: Date.now,
     },
-    changeNotes: {
+    changeDescription: {
       type: String,
-      maxlength: 500,
+      maxlength: 1000,
       default: 'Initial secure ingestion',
     },
+    changeNotes: {
+      type: String,
+      maxlength: 1000,
+      default: 'Initial secure ingestion',
+    },
+    extractedFields: {
+      type: mongoose.Schema.Types.Mixed,
+    },
+    auditLogId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AuditLog',
+    },
   },
-  { _id: false }
+  { _id: true }
 );
 
 const documentSchema = new mongoose.Schema(

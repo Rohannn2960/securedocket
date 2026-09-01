@@ -20,6 +20,10 @@ import {
   RefreshCw,
   Info,
   X,
+  GitCommit,
+  Upload,
+  GitCompare,
+  ArrowDown,
 } from 'lucide-react';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
@@ -52,6 +56,14 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
   const [verifyNotes, setVerifyNotes] = useState('');
   const [showFlagModal, setShowFlagModal] = useState(false);
   const [flagReason, setFlagReason] = useState('');
+
+  // Phase 10: Versioning and Edit Integrity states
+  const [showNewVersionModal, setShowNewVersionModal] = useState(false);
+  const [newVersionFile, setNewVersionFile] = useState(null);
+  const [newVersionNotes, setNewVersionNotes] = useState('');
+  const [showCompareModal, setShowCompareModal] = useState(false);
+  const [compareData, setCompareData] = useState(null);
+  const [comparingVersions, setComparingVersions] = useState(false);
 
   useEffect(() => {
     if (document) {
@@ -224,6 +236,66 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
       setError(err.response?.data?.error?.message || err.message);
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // Phase 10: Versioning Handlers
+  const handleCreateNewVersion = async (e) => {
+    e.preventDefault();
+    if (!newVersionFile && !newVersionNotes.trim()) {
+      setError('Please provide a replacement evidence file or revision change notes.');
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      setError(null);
+
+      const formData = new FormData();
+      if (newVersionFile) formData.append('file', newVersionFile);
+      formData.append('changeDescription', newVersionNotes.trim() || 'Updated revision');
+
+      const res = await documentService.createDocumentVersion(docData._id, formData);
+      setDocData(res.data);
+      setShowNewVersionModal(false);
+      setNewVersionFile(null);
+      setNewVersionNotes('');
+      setSuccess(`Created document revision v${res.data.version} with cryptographic SHA-256 seal.`);
+      if (onUpdated) onUpdated(res.data);
+    } catch (err) {
+      setError(err?.message || err.response?.data?.error?.message || 'Failed to create document revision');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleViewVersion = async (versionNumber) => {
+    try {
+      setActionLoading(true);
+      setError(null);
+      const res = await documentService.getVersionViewUrl(docData._id, versionNumber);
+      const streamUrl = res.data?.url || res.url;
+      const fullUrl = streamUrl.startsWith('http') ? streamUrl : `http://localhost:5000${streamUrl}`;
+      window.open(fullUrl, '_blank', 'noopener,noreferrer');
+      setSuccess(`Presigned 5-minute stream opened for version v${versionNumber}`);
+    } catch (err) {
+      setError(err?.message || 'Failed to open version view stream');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCompareVersions = async (v1, v2) => {
+    try {
+      setComparingVersions(true);
+      setError(null);
+      const res = await documentService.compareVersions(docData._id, v1, v2);
+      setCompareData(res.data);
+      setShowCompareModal(true);
+    } catch (err) {
+      setError(err?.message || 'Failed to compare document versions');
+    } finally {
+      setComparingVersions(false);
     }
   };
 
@@ -662,33 +734,110 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
           </div>
         </div>
 
-        {/* Version History Infrastructure */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
-            <History className="w-4 h-4 text-cyan-400" />
-            <span>Version Audit History (v{docData.version || 1})</span>
+        {/* Version History & Lineage Tree */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+              <History className="w-4 h-4 text-cyan-400" />
+              <span>Document Version Lineage (v{docData.version || 1})</span>
+            </div>
+            {user?.role !== 'auditor' && (
+              <Button
+                size="xs"
+                variant="primary"
+                onClick={() => setShowNewVersionModal(true)}
+              >
+                + Upload New Revision
+              </Button>
+            )}
           </div>
 
-          <div className="p-3 rounded-xl bg-defense-900/40 border border-slate-800/80 space-y-2">
+          <div className="p-4 rounded-xl bg-defense-900/60 border border-slate-800/80 space-y-3">
             {docData.versions && docData.versions.length > 0 ? (
-              docData.versions.map((ver, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between text-xs py-1.5 border-b border-slate-800/50 last:border-0"
-                >
-                  <div className="flex items-center gap-2 font-mono">
-                    <span className="px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-400 text-[10px] font-bold border border-cyan-800/40">
-                      v{ver.version}
-                    </span>
-                    <span className="text-slate-300">{ver.changeNotes || 'Initial secure upload'}</span>
-                  </div>
-                  <div className="text-slate-500 font-mono text-[11px]">
-                    {formatDate(ver.uploadedAt || docData.createdAt)}
-                  </div>
-                </div>
-              ))
+              <div className="space-y-3 relative pl-4 before:absolute before:left-2 before:top-3 before:bottom-3 before:w-0.5 before:bg-slate-800">
+                {docData.versions.map((ver, idx) => {
+                  const vNumber = ver.versionNumber || ver.version || idx + 1;
+                  const isLatest = (docData.version || 1) === vNumber;
+
+                  return (
+                    <div key={idx} className="relative group">
+                      {/* Node Dot */}
+                      <div
+                        className={`absolute -left-4 top-1.5 w-3 h-3 rounded-full border-2 bg-defense-950 ${
+                          isLatest ? 'border-cyan-400 shadow-glow-cyan' : 'border-slate-600'
+                        }`}
+                      />
+
+                      <div className="p-3 rounded-xl bg-defense-950/80 border border-slate-800/80 hover:border-slate-700 transition-all space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 rounded font-mono text-xs font-bold border ${
+                              isLatest
+                                ? 'bg-cyan-950 text-cyan-300 border-cyan-500/40'
+                                : 'bg-slate-900 text-slate-400 border-slate-800'
+                            }`}>
+                              Version {vNumber}
+                            </span>
+                            {isLatest && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950 text-emerald-400 border border-emerald-500/40">
+                                CURRENT SEALED
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleViewVersion(vNumber)}
+                              className="text-xs text-cyan-400 hover:text-cyan-300 font-mono flex items-center gap-1"
+                              title="Generate 5-minute presigned view for this version"
+                            >
+                              <Eye className="w-3.5 h-3.5" /> 5m View
+                            </button>
+
+                            {vNumber > 1 && (
+                              <button
+                                onClick={() => handleCompareVersions(vNumber - 1, vNumber)}
+                                className="text-xs text-indigo-400 hover:text-indigo-300 font-mono flex items-center gap-1 ml-2"
+                                title="Compare changes with previous version"
+                              >
+                                <GitCompare className="w-3.5 h-3.5" /> Compare with v{vNumber - 1}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Description / Notes */}
+                        <div className="text-xs text-slate-300 font-medium">
+                          {ver.changeDescription || ver.changeNotes || 'Evidentiary intake sealed'}
+                        </div>
+
+                        {/* Cryptographic Seal & Meta */}
+                        <div className="flex flex-wrap items-center justify-between text-[11px] font-mono text-slate-400 pt-1 border-t border-slate-800/60 gap-2">
+                          <div className="flex items-center gap-1">
+                            <span className="text-slate-500">SHA-256:</span>
+                            <span className="text-emerald-400">
+                              {truncateHash(ver.sha256Hash || docData.sha256Hash, 6, 6)}
+                            </span>
+                          </div>
+                          <div>
+                            {formatDate(ver.createdAt || ver.uploadedAt || docData.createdAt)}
+                          </div>
+                        </div>
+                      </div>
+
+                      {idx < docData.versions.length - 1 && (
+                        <div className="flex justify-start pl-2 py-0.5 text-slate-600">
+                          <ArrowDown className="w-3.5 h-3.5" />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
-              <div className="text-xs text-slate-400">Initial version v1 locked.</div>
+              <div className="text-xs text-slate-400 font-mono text-center py-2">
+                Version 1 locked in immutable ledger.
+              </div>
             )}
           </div>
         </div>
@@ -732,6 +881,110 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
             </Button>
           </div>
         </div>
+
+        {/* Upload New Revision Modal */}
+        {showNewVersionModal && (
+          <div className="p-4 rounded-xl bg-defense-950 border border-cyan-500/40 space-y-3 mt-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div className="flex items-center gap-2 text-cyan-400 font-bold text-xs font-mono">
+                <Upload className="w-4 h-4" />
+                <span>UPLOAD NEW DOCUMENT REVISION (v{(docData.version || 1) + 1})</span>
+              </div>
+              <button
+                onClick={() => setShowNewVersionModal(false)}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300">
+              Non-destructive update: Previous version v{docData.version || 1} will be cryptographically preserved in version history.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-mono text-slate-400 mb-1">
+                  Replacement File (PDF, DOCX, Image)
+                </label>
+                <input
+                  type="file"
+                  onChange={(e) => setNewVersionFile(e.target.files[0])}
+                  className="w-full text-xs text-slate-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-cyan-500/40 file:text-xs file:bg-cyan-950 file:text-cyan-300 file:cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-mono text-slate-400 mb-1">
+                  Revision Change Description / Justification Notes *
+                </label>
+                <textarea
+                  value={newVersionNotes}
+                  onChange={(e) => setNewVersionNotes(e.target.value)}
+                  rows={2}
+                  placeholder="State reason for revision (e.g., Added witness Annexure B, Corrected serial ID)..."
+                  className="w-full px-3 py-2 rounded-lg bg-defense-900 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                <Button size="sm" variant="ghost" onClick={() => setShowNewVersionModal(false)}>
+                  Cancel
+                </Button>
+                <Button size="sm" variant="primary" onClick={handleCreateNewVersion} disabled={actionLoading}>
+                  Seal Revision v{(docData.version || 1) + 1}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Version Comparison Diff Modal */}
+        {showCompareModal && compareData && (
+          <div className="p-4 rounded-xl bg-defense-950 border border-indigo-500/40 space-y-3 mt-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div className="flex items-center gap-2 text-indigo-400 font-bold text-xs font-mono">
+                <GitCompare className="w-4 h-4" />
+                <span>VERSION DIFF COMPARISON (v{compareData.versionA.versionNumber} ↔ v{compareData.versionB.versionNumber})</span>
+              </div>
+              <button
+                onClick={() => setShowCompareModal(false)}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3 rounded-lg bg-defense-900/80 border border-slate-800 space-y-1">
+                <span className="text-[10px] font-mono text-slate-400 uppercase">Version {compareData.versionA.versionNumber}</span>
+                <div className="font-semibold text-slate-200">{compareData.versionA.changeDescription}</div>
+                <div className="font-mono text-[10px] text-emerald-400">{truncateHash(compareData.versionA.sha256Hash, 8, 8)}</div>
+                <div className="text-[10px] text-slate-400">{formatBytes(compareData.versionA.fileSize)} • {formatDate(compareData.versionA.createdAt)}</div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-defense-900/80 border border-slate-800 space-y-1">
+                <span className="text-[10px] font-mono text-cyan-400 uppercase">Version {compareData.versionB.versionNumber}</span>
+                <div className="font-semibold text-slate-200">{compareData.versionB.changeDescription}</div>
+                <div className="font-mono text-[10px] text-emerald-400">{truncateHash(compareData.versionB.sha256Hash, 8, 8)}</div>
+                <div className="text-[10px] text-slate-400">{formatBytes(compareData.versionB.fileSize)} • {formatDate(compareData.versionB.createdAt)}</div>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-defense-900/50 border border-slate-800 text-xs font-mono space-y-1">
+              <div className="text-slate-300 font-bold">Diff Summary:</div>
+              <div className="text-slate-400">• Cryptographic Hash Modified: <span className={compareData.diff.hashChanged ? 'text-amber-400' : 'text-emerald-400'}>{compareData.diff.hashChanged ? 'YES (New Content/Signature)' : 'NO (Unchanged)'}</span></div>
+              <div className="text-slate-400">• Size Delta: <span className="text-cyan-300">{compareData.diff.sizeDifferenceBytes >= 0 ? `+${compareData.diff.sizeDifferenceBytes} bytes` : `${compareData.diff.sizeDifferenceBytes} bytes`}</span></div>
+              <div className="text-slate-400">• Time Delta: <span className="text-slate-200">{compareData.diff.timeDifferenceSeconds} seconds apart</span></div>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-800">
+              <Button size="sm" variant="secondary" onClick={() => setShowCompareModal(false)}>
+                Close Diff
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </Modal>
   );

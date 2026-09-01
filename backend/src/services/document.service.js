@@ -3,6 +3,7 @@ const { Document, Case, User, DOCUMENT_STATUS, ALL_DOCUMENT_TYPES } = require('.
 const ApiError = require('../utils/apiError');
 const { ERROR_CODES, HTTP_STATUS } = require('../constants/statusCodes');
 const { ROLES } = require('../constants/roles');
+const { AUDIT_ACTIONS } = require('../constants/actions');
 const { validateUploadedFile, generateServerS3Key } = require('../utils/fileValidator');
 const s3Service = require('./s3.service');
 const auditService = require('./audit.service');
@@ -340,6 +341,319 @@ class DocumentService {
       mimeType: doc.mimeType || 'application/pdf',
       fileName: doc.fileName || `${doc.title || 'document'}.pdf`,
       document: doc,
+    };
+  }
+
+  /**
+   * Create a new non-destructive document version
+   */
+  async createDocumentVersion({ documentId, file, changeDescription, updatedFields, title, user }) {
+    // 1. RBAC Clearance Check
+    if (user.role === ROLES.AUDITOR) {
+      throw new ApiError(
+        HTTP_STATUS.FORBIDDEN,
+        'Access forbidden: Auditors are granted read-only oversight clearance and cannot modify documents.',
+        ERROR_CODES.INSUFFICIENT_PERMISSIONS
+      );
+    }
+
+    const doc = await Document.findById(documentId).populate('caseId');
+    if (!doc) {
+      throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Document not found in vault registry', ERROR_CODES.DOCUMENT_NOT_FOUND);
+    }
+
+    const caseItem = doc.caseId;
+    if (user.role === ROLES.OFFICER) {
+      const isLead = caseItem.leadOfficer?.toString() === user.id.toString();
+      const isAssigned = Array.isArray(caseItem.assignedOfficers) && caseItem.assignedOfficers.some(
+        (id) => (id._id ? id._id.toString() : id.toString()) === user.id.toString()
+      );
+
+      if (!isLead && !isAssigned) {
+        throw new ApiError(
+          HTTP_STATUS.FORBIDDEN,
+          'Access forbidden: You cannot modify documents belonging to an unassigned case dossier.',
+          ERROR_CODES.INSUFFICIENT_PERMISSIONS
+        );
+      }
+    }
+
+    // Determine next version number
+    const currentVersion = doc.version || 1;
+    const nextVersion = currentVersion + 1;
+
+    let newS3Key = doc.s3Key;
+    let newSha256Hash = doc.sha256Hash;
+    let newFileSize = doc.fileSize;
+    let newMimeType = doc.mimeType;
+    let newFileName = doc.fileName;
+
+    // Handle file replacement / upload if provided
+    if (file) {
+      const fileValidation = validateUploadedFile(file);
+      newSha256Hash = calculateSha256(file.buffer);
+      newS3Key = generateServerS3Key(caseItem.caseNumber, `v${nextVersion}_${fileValidation.sanitizedName}`);
+      newFileSize = fileValidation.fileSize;
+      newMimeType = fileValidation.mimeType;
+      newFileName = fileValidation.sanitizedName;
+
+      await s3Service.uploadDocument({
+        key: newS3Key,
+        fileBuffer: file.buffer,
+        mimeType: newMimeType,
+        metadata: {
+          caseNumber: caseItem.caseNumber,
+          sha256Hash: newSha256Hash,
+          version: String(nextVersion),
+          uploadedBy: user.id,
+        },
+      });
+    }
+
+    // Ensure initial version exists in versions array
+    if (!doc.versions || doc.versions.length === 0) {
+      doc.versions = [
+        {
+          versionNumber: 1,
+          version: 1,
+          s3Key: doc.s3Key,
+          sha256Hash: doc.sha256Hash,
+          fileSize: doc.fileSize,
+          mimeType: doc.mimeType,
+          uploadedBy: doc.uploadedBy,
+          editedBy: doc.uploadedBy,
+          createdAt: doc.createdAt || new Date(),
+          uploadedAt: doc.createdAt || new Date(),
+          changeDescription: 'Initial secure ingestion',
+          changeNotes: 'Initial secure ingestion',
+        },
+      ];
+    }
+
+    const description = changeDescription || `Version ${nextVersion} revision`;
+
+    // 2. Create Audit Record first to link ID
+    const auditRecord = await auditService.recordAuditEntry({
+      userId: user.id,
+      action: AUDIT_ACTIONS.DOCUMENT_NEW_VERSION,
+      documentId: doc._id,
+      caseId: caseItem._id,
+      details: {
+        previousVersion: currentVersion,
+        newVersion: nextVersion,
+        previousHash: doc.sha256Hash,
+        newHash: newSha256Hash,
+        changeDescription: description,
+        editorRole: user.role,
+        hasNewFile: Boolean(file),
+      },
+    });
+
+    // 3. Create Version Record
+    const versionRecord = {
+      versionNumber: nextVersion,
+      version: nextVersion,
+      s3Key: newS3Key,
+      sha256Hash: newSha256Hash,
+      fileSize: newFileSize,
+      mimeType: newMimeType,
+      uploadedBy: user.id,
+      editedBy: user.id,
+      createdAt: new Date(),
+      uploadedAt: new Date(),
+      changeDescription: description,
+      changeNotes: description,
+      extractedFields: updatedFields || doc.extractedFields,
+      auditLogId: auditRecord._id,
+    };
+
+    doc.versions.push(versionRecord);
+    doc.version = nextVersion;
+    doc.s3Key = newS3Key;
+    doc.sha256Hash = newSha256Hash;
+    doc.fileSize = newFileSize;
+    doc.mimeType = newMimeType;
+    doc.fileName = newFileName;
+    if (title) doc.title = title.trim();
+    if (updatedFields) doc.extractedFields = updatedFields;
+
+    await doc.save();
+
+    logger.info(`[Version System] Created version v${nextVersion} for document ${doc._id}`, {
+      userId: user.id,
+      documentId: doc._id,
+      versionNumber: nextVersion,
+      sha256Hash: newSha256Hash,
+    });
+
+    return doc;
+  }
+
+  /**
+   * Get all version records for a document
+   */
+  async getDocumentVersions(documentId, user) {
+    const doc = await Document.findById(documentId)
+      .populate('caseId')
+      .populate('versions.uploadedBy', 'name email role badgeNumber')
+      .populate('versions.editedBy', 'name email role badgeNumber')
+      .populate('versions.auditLogId', 'currentHash previousHash timestamp action');
+
+    if (!doc) {
+      throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Document not found', ERROR_CODES.DOCUMENT_NOT_FOUND);
+    }
+
+    // Role-based boundary
+    if (user.role === ROLES.OFFICER) {
+      const caseItem = doc.caseId;
+      const isLead = caseItem.leadOfficer?.toString() === user.id.toString();
+      const isAssigned = Array.isArray(caseItem.assignedOfficers) && caseItem.assignedOfficers.some(
+        (id) => (id._id ? id._id.toString() : id.toString()) === user.id.toString()
+      );
+
+      if (!isLead && !isAssigned) {
+        throw new ApiError(
+          HTTP_STATUS.FORBIDDEN,
+          'Access forbidden: Clearance restricted for unassigned case documents',
+          ERROR_CODES.INSUFFICIENT_PERMISSIONS
+        );
+      }
+    }
+
+    const versions = doc.versions || [];
+    return {
+      documentId: doc._id,
+      title: doc.title,
+      currentVersion: doc.version || 1,
+      totalVersions: versions.length,
+      versions: versions.map((v) => ({
+        versionNumber: v.versionNumber || v.version,
+        s3Key: v.s3Key,
+        sha256Hash: v.sha256Hash,
+        fileSize: v.fileSize,
+        mimeType: v.mimeType,
+        editedBy: v.editedBy || v.uploadedBy,
+        createdAt: v.createdAt || v.uploadedAt,
+        changeDescription: v.changeDescription || v.changeNotes,
+        auditLog: v.auditLogId || null,
+      })),
+    };
+  }
+
+  /**
+   * Get specific version record
+   */
+  async getDocumentVersion(documentId, versionNumber, user) {
+    const doc = await Document.findById(documentId)
+      .populate('caseId')
+      .populate('versions.uploadedBy', 'name email role badgeNumber')
+      .populate('versions.editedBy', 'name email role badgeNumber')
+      .populate('versions.auditLogId', 'currentHash previousHash timestamp action');
+
+    if (!doc) {
+      throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Document not found', ERROR_CODES.DOCUMENT_NOT_FOUND);
+    }
+
+    const vNum = parseInt(versionNumber, 10);
+    const targetVersion = (doc.versions || []).find(
+      (v) => (v.versionNumber || v.version) === vNum
+    );
+
+    if (!targetVersion) {
+      throw new ApiError(
+        HTTP_STATUS.NOT_FOUND,
+        `Version v${versionNumber} not found for document ${documentId}`,
+        ERROR_CODES.RESOURCE_NOT_FOUND
+      );
+    }
+
+    return {
+      documentId: doc._id,
+      title: doc.title,
+      version: targetVersion.versionNumber || targetVersion.version,
+      versionNumber: targetVersion.versionNumber || targetVersion.version,
+      s3Key: targetVersion.s3Key,
+      sha256Hash: targetVersion.sha256Hash,
+      fileSize: targetVersion.fileSize,
+      mimeType: targetVersion.mimeType,
+      editedBy: targetVersion.editedBy || targetVersion.uploadedBy,
+      createdAt: targetVersion.createdAt || targetVersion.uploadedAt,
+      changeDescription: targetVersion.changeDescription || targetVersion.changeNotes,
+      auditLog: targetVersion.auditLogId,
+      isCurrent: (doc.version || 1) === (targetVersion.versionNumber || targetVersion.version),
+    };
+  }
+
+  /**
+   * Generate Presigned 5-minute View URL for a specific historical version
+   */
+  async generateVersionPresignedViewUrl({ documentId, versionNumber, user, expiresInSeconds = 300 }) {
+    const versionData = await this.getDocumentVersion(documentId, versionNumber, user);
+
+    const expires = Math.floor(Date.now() / 1000) + expiresInSeconds;
+    const config = require('../config/env');
+    const signature = crypto
+      .createHmac('sha256', config.jwt.accessSecret || 's3_secure_signing_secret')
+      .update(`${documentId}:${expires}`)
+      .digest('hex');
+
+    const presignedUrl = `/api/v1/documents/vault-stream/${documentId}?expires=${expires}&signature=${signature}`;
+
+    // Record audit entry for version view
+    await auditService.recordAuditEntry({
+      userId: user.id,
+      action: AUDIT_ACTIONS.DOCUMENT_VERSION_VIEW,
+      documentId,
+      details: {
+        versionNumber: versionData.versionNumber,
+        s3Key: versionData.s3Key,
+        sha256Hash: versionData.sha256Hash,
+        expiresInSeconds,
+      },
+    });
+
+    return {
+      url: presignedUrl,
+      expiresInSeconds,
+      expiresAt: new Date(expires * 1000).toISOString(),
+      sha256Hash: versionData.sha256Hash,
+      version: versionData.versionNumber,
+    };
+  }
+
+  /**
+   * Compare two versions of a document
+   */
+  async compareDocumentVersions({ documentId, versionA, versionB, user }) {
+    const vA = await this.getDocumentVersion(documentId, versionA, user);
+    const vB = await this.getDocumentVersion(documentId, versionB, user);
+
+    return {
+      documentId,
+      versionA: {
+        versionNumber: vA.versionNumber,
+        sha256Hash: vA.sha256Hash,
+        fileSize: vA.fileSize,
+        editedBy: vA.editedBy,
+        createdAt: vA.createdAt,
+        changeDescription: vA.changeDescription,
+      },
+      versionB: {
+        versionNumber: vB.versionNumber,
+        sha256Hash: vB.sha256Hash,
+        fileSize: vB.fileSize,
+        editedBy: vB.editedBy,
+        createdAt: vB.createdAt,
+        changeDescription: vB.changeDescription,
+      },
+      diff: {
+        hashChanged: vA.sha256Hash !== vB.sha256Hash,
+        sizeDifferenceBytes: (vB.fileSize || 0) - (vA.fileSize || 0),
+        timeDifferenceSeconds: Math.round(
+          (new Date(vB.createdAt).getTime() - new Date(vA.createdAt).getTime()) / 1000
+        ),
+        editorChanged: vA.editedBy?._id?.toString() !== vB.editedBy?._id?.toString(),
+      },
     };
   }
 

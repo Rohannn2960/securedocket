@@ -30,4 +30,30 @@ export const documentService = {
   getDocumentDownloadUrl: async (id) => {
     return api.get(`/documents/${id}/download-url`);
   },
+
+  getDocumentVersions: async (id) => {
+    return api.get(`/documents/${id}/versions`);
+  },
+
+  getDocumentVersion: async (id, versionNumber) => {
+    return api.get(`/documents/${id}/versions/${versionNumber}`);
+  },
+
+  getVersionViewUrl: async (id, versionNumber) => {
+    return api.get(`/documents/${id}/versions/${versionNumber}/view`);
+  },
+
+  createDocumentVersion: async (id, formData) => {
+    return api.post(`/documents/${id}/versions`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
+
+  compareVersions: async (id, v1, v2) => {
+    return api.get(`/documents/${id}/versions/compare`, {
+      params: { v1, v2 },
+    });
+  },
 };

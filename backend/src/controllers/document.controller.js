@@ -189,6 +189,105 @@ async function streamVaultDocument(req, res) {
   return res.status(200).send(result.buffer);
 }
 
+/**
+ * Create a new document version (Authorized Edit)
+ */
+async function createDocumentVersion(req, res) {
+  const { id } = req.params;
+  const { changeDescription, updatedFields, title } = req.body;
+
+  let parsedFields = updatedFields;
+  if (typeof updatedFields === 'string') {
+    try {
+      parsedFields = JSON.parse(updatedFields);
+    } catch {
+      parsedFields = undefined;
+    }
+  }
+
+  const updatedDoc = await documentService.createDocumentVersion({
+    documentId: id,
+    file: req.file,
+    changeDescription,
+    updatedFields: parsedFields,
+    title,
+    user: req.user,
+  });
+
+  return ApiResponse.created(res, {
+    message: `Document revision v${updatedDoc.version} created successfully`,
+    data: updatedDoc,
+  });
+}
+
+/**
+ * Get all document versions
+ */
+async function getDocumentVersions(req, res) {
+  const { id } = req.params;
+  const versionsData = await documentService.getDocumentVersions(id, req.user);
+
+  return ApiResponse.success(res, {
+    message: 'Document version history retrieved',
+    data: versionsData,
+  });
+}
+
+/**
+ * Get specific version details
+ */
+async function getDocumentVersion(req, res) {
+  const { id, versionNumber } = req.params;
+  const versionData = await documentService.getDocumentVersion(id, versionNumber, req.user);
+
+  return ApiResponse.success(res, {
+    message: `Document version v${versionNumber} retrieved`,
+    data: versionData,
+  });
+}
+
+/**
+ * Generate 5-minute Presigned View URL for specific version
+ */
+async function getVersionViewUrl(req, res) {
+  const { id, versionNumber } = req.params;
+  const result = await documentService.generateVersionPresignedViewUrl({
+    documentId: id,
+    versionNumber,
+    user: req.user,
+    expiresInSeconds: 300,
+  });
+
+  return ApiResponse.success(res, {
+    message: `Presigned S3 view URL for version v${versionNumber} generated`,
+    data: result,
+  });
+}
+
+/**
+ * Compare two versions of a document
+ */
+async function compareDocumentVersions(req, res) {
+  const { id } = req.params;
+  const { v1, v2 } = req.query;
+
+  if (!v1 || !v2) {
+    throw ApiError.badRequest('Both v1 and v2 query parameters are required for version comparison');
+  }
+
+  const diffData = await documentService.compareDocumentVersions({
+    documentId: id,
+    versionA: parseInt(v1, 10),
+    versionB: parseInt(v2, 10),
+    user: req.user,
+  });
+
+  return ApiResponse.success(res, {
+    message: `Comparison between v${v1} and v${v2} calculated`,
+    data: diffData,
+  });
+}
+
 module.exports = {
   uploadDocument,
   getDocuments,
@@ -196,4 +295,9 @@ module.exports = {
   getDocumentViewUrl,
   getDocumentDownloadUrl,
   streamVaultDocument,
+  createDocumentVersion,
+  getDocumentVersions,
+  getDocumentVersion,
+  getVersionViewUrl,
+  compareDocumentVersions,
 };
