@@ -15,7 +15,7 @@ const router = express.Router();
 router.post(
   '/semantic',
   requireAuth,
-  requireRole([ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN]),
+  requireRole(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN, ROLES.AUDITOR),
   asyncWrapper(performSemanticSearch)
 );
 

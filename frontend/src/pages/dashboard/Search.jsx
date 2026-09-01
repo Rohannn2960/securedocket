@@ -46,9 +46,10 @@ export function Search() {
 
     try {
       const res = await searchService.semanticSearch({ query, caseId: caseIdFilter || undefined });
-      setResults(res.data?.results || []);
+      const searchResults = res.data?.results || res.results || [];
+      setResults(searchResults);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to perform semantic search');
+      setError(err?.message || err.response?.data?.message || 'Failed to perform semantic search');
     } finally {
       setIsSearching(false);
     }

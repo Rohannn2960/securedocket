@@ -46,12 +46,7 @@ class SearchService {
       }
     }
 
-    // Ensure we only search documents that have embeddings
-    filter.embeddingVector = { $exists: true, $ne: [] };
-
     // 3. Fetch Authorized Documents
-    // Select the necessary fields. We need embeddingVector to calculate similarity.
-    // We also select extractedText to provide context snippets.
     const documents = await Document.find(filter)
       .select('title documentType caseId s3Key fileName fileSize mimeType classification ocrConfidence status embeddingVector extractedText extractedFields')
       .populate('caseId', 'title caseNumber');
@@ -60,14 +55,28 @@ class SearchService {
     const results = [];
 
     for (const doc of documents) {
-      const similarity = vectorService.calculateCosineSimilarity(queryEmbedding, doc.embeddingVector);
+      let docVec = doc.embeddingVector;
+      if (!Array.isArray(docVec) || docVec.length === 0) {
+        const textForEmbedding = doc.extractedText || `${doc.title} ${doc.documentType}`;
+        docVec = await vectorService.generateEmbedding(textForEmbedding);
+        if (docVec && docVec.length > 0) {
+          // Asynchronously save vector for future queries
+          Document.findByIdAndUpdate(doc._id, { embeddingVector: docVec }).catch(() => {});
+        }
+      }
+
+      if (!docVec || docVec.length === 0) continue;
+
+      const similarity = vectorService.calculateCosineSimilarity(queryEmbedding, docVec);
       
-      // Threshold check (e.g., must be somewhat relevant)
-      if (similarity > 0.3) {
+      // Threshold check (return relevant results)
+      if (similarity > 0.15) {
         // Find a relevant snippet from extractedText
         let snippet = '';
         if (doc.extractedText) {
-            snippet = doc.extractedText.substring(0, 300) + '...';
+          snippet = doc.extractedText.substring(0, 300) + '...';
+        } else {
+          snippet = `Document title: ${doc.title} (${doc.documentType})`;
         }
 
         results.push({

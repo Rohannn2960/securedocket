@@ -38,6 +38,39 @@ class VectorService {
   }
 
   /**
+   * Deterministic 768-dimensional feature projection fallback
+   */
+  generateDeterministicFallbackEmbedding(text) {
+    const vector = new Array(768).fill(0);
+    const tokens = text.toLowerCase().split(/\W+/).filter(Boolean);
+    if (tokens.length === 0) return vector;
+
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      let hash = 0;
+      for (let j = 0; j < token.length; j++) {
+        hash = ((hash << 5) - hash) + token.charCodeAt(j);
+        hash |= 0;
+      }
+      const idx = Math.abs(hash) % 768;
+      vector[idx] += 1;
+    }
+
+    // Normalize vector to unit length
+    let norm = 0;
+    for (let i = 0; i < 768; i++) {
+      norm += vector[i] * vector[i];
+    }
+    norm = Math.sqrt(norm);
+    if (norm > 0) {
+      for (let i = 0; i < 768; i++) {
+        vector[i] /= norm;
+      }
+    }
+    return vector;
+  }
+
+  /**
    * Generate 768-dimensional text embedding vector
    */
   async generateEmbedding(text) {
@@ -46,8 +79,8 @@ class VectorService {
     }
 
     if (!this.genAI) {
-      logger.warn('[Vector Service] Gemini API key not configured. Returning empty vector.');
-      return null;
+      logger.warn('[Vector Service] Gemini API key not configured. Using deterministic fallback projection.');
+      return this.generateDeterministicFallbackEmbedding(text);
     }
 
     try {
@@ -58,8 +91,8 @@ class VectorService {
       const embedding = result.embedding;
       return embedding.values; // Should be a 768-dimensional array
     } catch (error) {
-      logger.error(`[Vector Service] Failed to generate embedding: ${error.message}`);
-      return null; // Return null instead of failing the whole pipeline
+      logger.warn(`[Vector Service] Gemini API embedContent unavailable (${error.message}). Falling back to local projection.`);
+      return this.generateDeterministicFallbackEmbedding(text);
     }
   }
 }

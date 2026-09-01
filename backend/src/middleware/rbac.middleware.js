@@ -8,6 +8,7 @@ const logger = require('../config/logger');
  * @param {...string} allowedRoles - Permitted roles (e.g. 'admin', 'officer', 'verifier', 'auditor')
  */
 function requireRole(...allowedRoles) {
+  const flattenedRoles = allowedRoles.flat();
   return (req, res, next) => {
     if (!req.user) {
       return next(new ApiError(HTTP_STATUS.UNAUTHORIZED, 'Authentication required before clearance check', ERROR_CODES.AUTH_REQUIRED));
@@ -15,12 +16,12 @@ function requireRole(...allowedRoles) {
 
     const userRole = req.user.role;
 
-    if (!allowedRoles.includes(userRole)) {
+    if (!flattenedRoles.includes(userRole)) {
       logger.warn(`Clearance violation: User ${req.user.id} (${userRole}) attempted unauthorized access to ${req.method} ${req.originalUrl}`, {
         userId: req.user.id,
         role: userRole,
         url: req.originalUrl,
-        allowedRoles,
+        allowedRoles: flattenedRoles,
       });
 
       return next(
