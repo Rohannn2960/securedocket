@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Briefcase, FileText, Link2, Sparkles, ShieldCheck, Users } from 'lucide-react';
+import { LayoutDashboard, Briefcase, FileText, FileCheck2, Link2, Sparkles, ShieldCheck, Users } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { clsx } from 'clsx';
 
@@ -28,6 +28,13 @@ export function Sidebar() {
       icon: FileText,
       badge: 'SHA-256',
       roles: ['officer', 'verifier', 'admin', 'auditor'],
+    },
+    {
+      to: '/dashboard/verification',
+      label: 'Verification Queue',
+      icon: FileCheck2,
+      badge: 'CFSL',
+      roles: ['verifier', 'admin', 'auditor'],
     },
     {
       to: '/dashboard/audit',

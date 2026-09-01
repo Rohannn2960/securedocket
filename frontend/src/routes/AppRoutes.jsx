@@ -9,6 +9,7 @@ import { Overview } from '../pages/dashboard/Overview';
 import { Cases } from '../pages/dashboard/Cases';
 import { CaseDetail } from '../pages/dashboard/CaseDetail';
 import { Documents } from '../pages/dashboard/Documents';
+import { VerificationQueue } from '../pages/dashboard/VerificationQueue';
 import { AuditLogs } from '../pages/dashboard/AuditLogs';
 import { SemanticSearch } from '../pages/dashboard/SemanticSearch';
 import { Users } from '../pages/dashboard/Users';
@@ -34,6 +35,14 @@ export function AppRoutes() {
           <Route path="/dashboard/cases" element={<Cases />} />
           <Route path="/dashboard/cases/:id" element={<CaseDetail />} />
           <Route path="/dashboard/documents" element={<Documents />} />
+          
+          {/* Forensic Verification Queue Restricted to Verifiers, Admins, Auditors */}
+          <Route
+            element={<ProtectedRoute allowedRoles={['verifier', 'admin', 'auditor']} />}
+          >
+            <Route path="/dashboard/verification" element={<VerificationQueue />} />
+          </Route>
+
           <Route path="/dashboard/search" element={<SemanticSearch />} />
 
           {/* Audit Chain Restricted to Auditors, Admins, and Officers */}

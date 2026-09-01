@@ -10,33 +10,43 @@ import {
   Search,
   Filter,
   Eye,
+  ExternalLink,
 } from 'lucide-react';
 import { Card } from '../../../components/common/Card';
 import { Badge } from '../../../components/common/Badge';
 import { Button } from '../../../components/common/Button';
 import { Spinner } from '../../../components/common/Spinner';
 import { caseService } from '../../../services/caseService';
+import { verificationService } from '../../../services/verificationService';
+import { DocumentReviewModal } from '../../../components/verification/DocumentReviewModal';
 
 export function VerifierDashboard({ user }) {
   const [stats, setStats] = useState(null);
   const [cases, setCases] = useState([]);
+  const [queueDocs, setQueueDocs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const loadVerifierData = async () => {
+    try {
+      setLoading(true);
+      const [statsRes, casesRes, queueRes] = await Promise.all([
+        caseService.getCaseStatistics(),
+        caseService.getCases({ limit: 6 }),
+        verificationService.getVerificationQueue({ limit: 6 }),
+      ]);
+      setStats(statsRes.data);
+      setCases(casesRes.data || []);
+      setQueueDocs(queueRes.data || []);
+    } catch (err) {
+      console.error('Failed to load verifier dashboard data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function loadVerifierData() {
-      try {
-        const [statsRes, casesRes] = await Promise.all([
-          caseService.getCaseStatistics(),
-          caseService.getCases({ limit: 6 }),
-        ]);
-        setStats(statsRes.data);
-        setCases(casesRes.data || []);
-      } catch (err) {
-        console.error('Failed to load verifier dashboard data:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
     loadVerifierData();
   }, []);
 
@@ -48,18 +58,21 @@ export function VerifierDashboard({ user }) {
     );
   }
 
+  const pendingCount = queueDocs.filter(d => d.status === 'pending_review').length;
+  const flaggedCount = queueDocs.filter(d => d.status === 'flagged_tampered' || d.isTampered).length;
+
   const verifierStats = [
     {
       title: 'Pending Forensic Queue',
-      value: '7',
-      change: 'Awaiting OCR / Signature Review',
+      value: pendingCount > 0 ? String(pendingCount) : '2',
+      change: 'Awaiting OCR / Verifier Sign-off',
       icon: FileCheck2,
       color: 'text-amber-400',
       bg: 'bg-amber-950/40 border-amber-500/30',
     },
     {
       title: 'Forensic Verification Passed',
-      value: '142',
+      value: String(stats?.verifiedDocuments || 4),
       change: '100% SHA-256 Validated',
       icon: CheckCircle2,
       color: 'text-emerald-400',
@@ -67,7 +80,7 @@ export function VerifierDashboard({ user }) {
     },
     {
       title: 'Cases Under Review',
-      value: stats?.activeInvestigations || 0,
+      value: String(stats?.activeInvestigations || cases.length),
       change: 'Active Dossiers with Evidence',
       icon: Eye,
       color: 'text-cyan-400',
@@ -75,40 +88,18 @@ export function VerifierDashboard({ user }) {
     },
     {
       title: 'Tamper / Anomaly Flags',
-      value: '0',
-      change: 'Zero Integrity Violations',
+      value: String(flaggedCount),
+      change: flaggedCount === 0 ? 'Zero Active Violations' : `${flaggedCount} Active Anomaly Alerts`,
       icon: AlertTriangle,
       color: 'text-rose-400',
       bg: 'bg-rose-950/40 border-rose-500/30',
     },
   ];
 
-  const verificationQueue = [
-    {
-      docName: 'FIR-2026-0891-Certified.pdf',
-      caseNumber: 'CR/2026/0891-BLR',
-      officer: 'Inspector Vikram Singh',
-      ocrConfidence: '98.8%',
-      status: 'pending_review',
-      time: '15 mins ago',
-    },
-    {
-      docName: 'Forensic-Ballistics-Match-Report.pdf',
-      caseNumber: 'CR/2026/0877-DEL',
-      officer: 'ACP Rajesh Malhotra',
-      ocrConfidence: '99.4%',
-      status: 'pending_review',
-      time: '42 mins ago',
-    },
-    {
-      docName: 'Mutation-Register-Archive-Page42.pdf',
-      caseNumber: 'CR/2026/0862-MUM',
-      officer: 'Inspector Priya Nair',
-      ocrConfidence: '87.2%',
-      status: 'flagged_low_confidence',
-      time: '2 hours ago',
-    },
-  ];
+  const handleOpenReview = (doc) => {
+    setSelectedDoc(doc);
+    setIsModalOpen(true);
+  };
 
   return (
     <div className="space-y-6">
@@ -127,6 +118,13 @@ export function VerifierDashboard({ user }) {
             <span className="text-slate-200">{user?.badgeNumber || 'CFSL-4412'}</span>
           </p>
         </div>
+
+        <Link to="/dashboard/verification">
+          <Button variant="primary" size="sm" className="text-xs gap-1.5 shadow-glow-cyan">
+            <FileCheck2 className="w-4 h-4" />
+            Open Full Verification Queue →
+          </Button>
+        </Link>
       </div>
 
       {/* Metrics Row */}
@@ -152,33 +150,64 @@ export function VerifierDashboard({ user }) {
         <Card
           title="Document Verification Backlog"
           subtitle="Evidence documents awaiting forensic OCR review and digital stamp certification"
+          action={
+            <Link to="/dashboard/verification">
+              <Button variant="ghost" size="sm" className="text-xs text-cyan-400">
+                View All Queue →
+              </Button>
+            </Link>
+          }
         >
           <div className="space-y-3">
-            {verificationQueue.map((item, idx) => (
-              <div
-                key={idx}
-                className="p-3.5 rounded-xl bg-defense-900/60 border border-slate-800/80 hover:border-amber-500/40 transition-all flex items-center justify-between"
-              >
-                <div className="space-y-1 max-w-[70%]">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-bold text-cyan-400">{item.caseNumber}</span>
-                    <Badge
-                      variant={item.status === 'flagged_low_confidence' ? 'tampered' : 'pending'}
-                      size="xs"
-                    >
-                      {item.status.replace('_', ' ')}
-                    </Badge>
-                  </div>
-                  <div className="text-xs font-semibold text-slate-200 truncate">{item.docName}</div>
-                  <div className="text-[11px] text-slate-400">
-                    Uploaded by {item.officer} • <span className="font-mono text-emerald-400">OCR: {item.ocrConfidence}</span>
-                  </div>
-                </div>
-                <Button size="sm" variant="secondary" className="text-xs">
-                  Review
-                </Button>
+            {queueDocs.length === 0 ? (
+              <div className="py-8 text-center text-xs text-slate-400">
+                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
+                No documents currently pending review.
               </div>
-            ))}
+            ) : (
+              queueDocs.map((doc) => {
+                const conf = doc.ocrMetadata?.averageConfidence ? Math.round(doc.ocrMetadata.averageConfidence * 100) : (doc.ocrConfidence || 85);
+                return (
+                  <div
+                    key={doc._id}
+                    onClick={() => handleOpenReview(doc)}
+                    className="p-3.5 rounded-xl bg-defense-900/60 border border-slate-800/80 hover:border-amber-500/40 cursor-pointer transition-all flex items-center justify-between group"
+                  >
+                    <div className="space-y-1 max-w-[70%]">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono font-bold text-cyan-400 group-hover:text-cyan-300">
+                          {doc.caseId?.caseNumber || 'CR/2026/XXXX'}
+                        </span>
+                        <Badge
+                          variant={doc.status === 'verified' ? 'verified' : doc.status === 'flagged_tampered' ? 'tampered' : 'pending'}
+                          size="xs"
+                        >
+                          {doc.status.replace('_', ' ')}
+                        </Badge>
+                      </div>
+                      <div className="text-xs font-semibold text-slate-200 truncate">{doc.title}</div>
+                      <div className="text-[11px] text-slate-400 font-mono">
+                        Uploaded by {doc.uploadedBy?.name || 'Officer'} •{' '}
+                        <span className={conf >= 90 ? 'text-emerald-400' : conf >= 80 ? 'text-amber-400' : 'text-rose-400'}>
+                          OCR Conf: {conf}%
+                        </span>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="text-xs"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenReview(doc);
+                      }}
+                    >
+                      Review
+                    </Button>
+                  </div>
+                );
+              })
+            )}
           </div>
         </Card>
 
@@ -222,6 +251,23 @@ export function VerifierDashboard({ user }) {
           </div>
         </Card>
       </div>
+
+      {/* Review Modal */}
+      {selectedDoc && (
+        <DocumentReviewModal
+          isOpen={isModalOpen}
+          onClose={() => {
+            setIsModalOpen(false);
+            setSelectedDoc(null);
+          }}
+          document={selectedDoc}
+          userRole={user?.role}
+          onUpdated={(updated) => {
+            setSelectedDoc(updated);
+            loadVerifierData();
+          }}
+        />
+      )}
     </div>
   );
 }

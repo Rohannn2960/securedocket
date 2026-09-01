@@ -129,6 +129,55 @@ const documentSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {},
     },
+    classification: {
+      predictedType: {
+        type: String,
+        enum: [...ALL_DOCUMENT_TYPES, 'unknown'],
+        default: 'unknown',
+      },
+      confidence: {
+        type: Number,
+        min: 0,
+        max: 1,
+        default: 0,
+      },
+      reasoning: {
+        type: String,
+        default: '',
+      },
+      classifiedAt: {
+        type: Date,
+      },
+    },
+    ocrMetadata: {
+      engine: {
+        type: String,
+        default: 'none',
+      },
+      processedAt: {
+        type: Date,
+      },
+      averageConfidence: {
+        type: Number,
+        min: 0,
+        max: 1,
+        default: 0,
+      },
+      needsHumanReview: {
+        type: Boolean,
+        default: false,
+        index: true,
+      },
+      reviewPriority: {
+        type: String,
+        enum: ['low', 'medium', 'high', 'critical'],
+        default: 'medium',
+      },
+      rawTextLength: {
+        type: Number,
+        default: 0,
+      },
+    },
     extractedText: {
       type: String,
       select: false, // Omit large text block by default
@@ -144,6 +193,10 @@ const documentSchema = new mongoose.Schema(
     },
     verifiedAt: {
       type: Date,
+    },
+    verificationNotes: {
+      type: String,
+      maxlength: 2000,
     },
     tamperFlags: [
       {

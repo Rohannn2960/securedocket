@@ -1,72 +1,53 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
-  FileText,
-  ShieldCheck,
+  FileCheck2,
+  ShieldAlert,
+  CheckCircle2,
+  AlertTriangle,
+  Sparkles,
+  ExternalLink,
+  Edit3,
+  Check,
+  X,
   Clock,
   User,
-  Calendar,
-  Lock,
-  ExternalLink,
-  Download,
-  Copy,
-  Check,
-  AlertTriangle,
-  History,
-  Layers,
-  Eye,
-  Edit3,
-  CheckCircle2,
-  Sparkles,
-  RefreshCw,
   Info,
-  X,
+  RefreshCw,
+  FileText,
+  Lock,
 } from 'lucide-react';
 import { Modal } from '../common/Modal';
-import { Button } from '../common/Button';
 import { Badge } from '../common/Badge';
-import { Alert } from '../common/Alert';
+import { Button } from '../common/Button';
 import { Spinner } from '../common/Spinner';
-import { useAuth } from '../../hooks/useAuth';
-import { documentService } from '../../services/documentService';
 import { verificationService } from '../../services/verificationService';
-import { formatBytes } from '../../utils/crypto';
-import { formatDate, truncateHash } from '../../utils/formatters';
+import { documentService } from '../../services/documentService';
 
-export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
-  const { user } = useAuth();
+export function DocumentReviewModal({ isOpen, onClose, document, onUpdated, userRole }) {
   const [docData, setDocData] = useState(document);
-  const [copiedHash, setCopiedHash] = useState(false);
-  const [generatingUrl, setGeneratingUrl] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [viewUrlData, setViewUrlData] = useState(null);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
-
-  // Verifier field edit states
-  const [activeFieldEdit, setActiveFieldEdit] = useState(null);
+  const [activeFieldEdit, setActiveFieldEdit] = useState(null); // field name currently editing
   const [editValue, setEditValue] = useState('');
-
-  // Verification & Flagging confirm modals
-  const [showVerifyConfirm, setShowVerifyConfirm] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const [verifyNotes, setVerifyNotes] = useState('');
+  const [showVerifyConfirm, setShowVerifyConfirm] = useState(false);
   const [showFlagModal, setShowFlagModal] = useState(false);
   const [flagReason, setFlagReason] = useState('');
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [successMsg, setSuccessMsg] = useState(null);
 
-  useEffect(() => {
+  // Sync state if document prop changes
+  React.useEffect(() => {
     if (document) {
       setDocData(document);
-      setError(null);
-      setSuccess(null);
+      setErrorMsg(null);
+      setSuccessMsg(null);
       setActiveFieldEdit(null);
-      setShowVerifyConfirm(false);
-      setShowFlagModal(false);
     }
   }, [document]);
 
   if (!isOpen || !docData) return null;
 
-  const isVerifierOrAdmin = user && ['verifier', 'admin'].includes(user.role);
+  const isVerifierOrAdmin = ['verifier', 'admin'].includes(userRole);
   const extractedFields = docData.extractedFields || {};
   const classification = docData.classification || {};
   const ocrMetadata = docData.ocrMetadata || {};
@@ -76,66 +57,36 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
     const score = typeof confidence === 'number' ? (confidence <= 1 ? Math.round(confidence * 100) : confidence) : 85;
     if (score >= 90) {
       return (
-        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
+        <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-          {score}% High
+          {score}% High Confidence
         </span>
       );
     }
     if (score >= 80) {
       return (
-        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-950/80 text-amber-400 border border-amber-500/40 flex items-center gap-1">
+        <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-amber-950/80 text-amber-400 border border-amber-500/40 flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
           {score}% Moderate
         </span>
       );
     }
     return (
-      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-950/80 text-rose-400 border border-rose-500/40 flex items-center gap-1 animate-pulse">
-        <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
-        {score}% Review Needed
+      <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-rose-950/80 text-rose-400 border border-rose-500/40 flex items-center gap-1">
+        <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse"></span>
+        {score}% Review Required
       </span>
     );
   };
 
-  const handleCopyHash = () => {
-    navigator.clipboard.writeText(docData.sha256Hash);
-    setCopiedHash(true);
-    setTimeout(() => setCopiedHash(false), 2000);
-  };
-
-  const handleSecureView = async () => {
-    setGeneratingUrl(true);
-    setError(null);
+  const handleOpenSecureView = async () => {
     try {
-      const res = await documentService.getDocumentViewUrl(docData._id);
-      setViewUrlData(res.data);
-      window.open(res.data.url, '_blank', 'noopener,noreferrer');
-    } catch (err) {
-      setError(err?.message || 'Failed to generate presigned view URL');
-    } finally {
-      setGeneratingUrl(false);
-    }
-  };
-
-  const handleDownload = async () => {
-    setDownloading(true);
-    setError(null);
-    try {
-      const res = await documentService.getDocumentDownloadUrl(docData._id);
-      const url = res.data?.downloadUrl || res.data?.url;
-      if (url) {
-        const link = window.document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', docData.fileName || 'evidence-file');
-        window.document.body.appendChild(link);
-        link.click();
-        link.remove();
+      const res = await documentService.getPresignedViewUrl(docData._id, 'inline');
+      if (res.data?.viewUrl) {
+        window.open(res.data.viewUrl, '_blank', 'noopener,noreferrer');
       }
     } catch (err) {
-      setError(err?.message || 'Failed to generate presigned download URL');
-    } finally {
-      setDownloading(false);
+      setErrorMsg('Failed to generate 5-minute presigned streaming link: ' + (err.response?.data?.error?.message || err.message));
     }
   };
 
@@ -147,14 +98,14 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
   const handleSaveFieldCorrection = async (fieldName) => {
     try {
       setActionLoading(true);
-      setError(null);
+      setErrorMsg(null);
       const res = await verificationService.correctField(docData._id, fieldName, editValue);
       setDocData(res.data);
       setActiveFieldEdit(null);
-      setSuccess(`Field '${fieldName}' updated with non-destructive verifier correction.`);
+      setSuccessMsg(`Field '${fieldName}' successfully updated with human verification correction.`);
       if (onUpdated) onUpdated(res.data);
     } catch (err) {
-      setError(err.response?.data?.error?.message || err.message);
+      setErrorMsg(err.response?.data?.error?.message || err.message);
     } finally {
       setActionLoading(false);
     }
@@ -163,13 +114,13 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
   const handleApproveField = async (fieldName) => {
     try {
       setActionLoading(true);
-      setError(null);
+      setErrorMsg(null);
       const res = await verificationService.approveField(docData._id, fieldName);
       setDocData(res.data);
-      setSuccess(`Field '${fieldName}' certified as approved.`);
+      setSuccessMsg(`Field '${fieldName}' certified and locked as approved.`);
       if (onUpdated) onUpdated(res.data);
     } catch (err) {
-      setError(err.response?.data?.error?.message || err.message);
+      setErrorMsg(err.response?.data?.error?.message || err.message);
     } finally {
       setActionLoading(false);
     }
@@ -178,13 +129,13 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
   const handleReRunExtraction = async () => {
     try {
       setActionLoading(true);
-      setError(null);
+      setErrorMsg(null);
       const res = await verificationService.triggerExtraction(docData._id);
       setDocData(res.data);
-      setSuccess('AI OCR and document classification pipeline completed.');
+      setSuccessMsg('AI OCR and document classification re-processed successfully.');
       if (onUpdated) onUpdated(res.data);
     } catch (err) {
-      setError(err.response?.data?.error?.message || err.message);
+      setErrorMsg(err.response?.data?.error?.message || err.message);
     } finally {
       setActionLoading(false);
     }
@@ -193,14 +144,14 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
   const handleVerifyDocument = async () => {
     try {
       setActionLoading(true);
-      setError(null);
+      setErrorMsg(null);
       const res = await verificationService.verifyDocument(docData._id, verifyNotes);
       setDocData(res.data);
       setShowVerifyConfirm(false);
-      setSuccess('Document successfully certified and verified by Forensic Verifier.');
+      setSuccessMsg('Document successfully verified and digitally certified in the forensic ledger.');
       if (onUpdated) onUpdated(res.data);
     } catch (err) {
-      setError(err.response?.data?.error?.message || err.message);
+      setErrorMsg(err.response?.data?.error?.message || err.message);
     } finally {
       setActionLoading(false);
     }
@@ -208,20 +159,20 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
 
   const handleFlagDocument = async () => {
     if (!flagReason || flagReason.trim().length < 5) {
-      setError('Please specify a detailed reason (minimum 5 characters) for flagging this document.');
+      setErrorMsg('Please specify a detailed reason (minimum 5 characters) for flagging this document.');
       return;
     }
 
     try {
       setActionLoading(true);
-      setError(null);
+      setErrorMsg(null);
       const res = await verificationService.flagDocument(docData._id, flagReason);
       setDocData(res.data);
       setShowFlagModal(false);
-      setSuccess('Document flagged for forensic anomaly.');
+      setSuccessMsg('Document flagged for forensic integrity anomaly.');
       if (onUpdated) onUpdated(res.data);
     } catch (err) {
-      setError(err.response?.data?.error?.message || err.message);
+      setErrorMsg(err.response?.data?.error?.message || err.message);
     } finally {
       setActionLoading(false);
     }
@@ -233,190 +184,134 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
       onClose={onClose}
       title={
         <div className="flex items-center gap-2">
-          <FileText className="w-5 h-5 text-cyan-400" />
-          <span className="text-slate-100 font-bold">Evidentiary Document Dossier</span>
+          <FileCheck2 className="w-5 h-5 text-amber-400" />
+          <span className="text-slate-100 font-bold">Forensic Document Intelligence Dossier</span>
         </div>
       }
       size="2xl"
     >
       <div className="space-y-5 max-h-[80vh] overflow-y-auto pr-1">
-        {error && <Alert variant="error">{error}</Alert>}
-        {success && <Alert variant="success">{success}</Alert>}
-
-        {/* Mandatory Legal Authenticity Disclaimer */}
-        <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/30 space-y-1">
-          <div className="flex items-center gap-2 text-amber-400 text-xs font-bold font-mono">
-            <Info className="w-4 h-4 shrink-0" />
-            <span>AUTHENTICITY & CONFIDENCE PROTOCOL</span>
-          </div>
-          <p className="text-[11px] text-slate-300 leading-relaxed">
-            <strong>AI Extraction Confidence</strong> measures OCR text fidelity against pixels.
-            It does <span className="underline decoration-amber-400 font-semibold">NOT</span> certify physical evidentiary validity or legal authenticity prior to digital intake.
-          </p>
-        </div>
-
-        {/* Top Header Card */}
-        <div className="p-4 rounded-xl bg-defense-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 flex items-center justify-center shrink-0">
-              <FileText className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <Badge variant="cyan" size="xs">
-                  {docData.documentType?.toUpperCase() || 'EVIDENCE'}
-                </Badge>
-                <Badge
-                  variant={docData.status === 'verified' ? 'verified' : docData.status === 'flagged_tampered' ? 'tampered' : 'pending'}
-                  size="xs"
-                >
-                  {docData.status?.replace('_', ' ').toUpperCase() || 'PENDING REVIEW'}
-                </Badge>
-                {docData.isTampered && (
-                  <Badge variant="tampered" size="xs">
-                    TAMPER ALERT
-                  </Badge>
-                )}
-              </div>
-              <h3 className="text-sm font-bold text-slate-100 mt-1">{docData.title}</h3>
-              <div className="text-xs text-slate-400 font-mono">{docData.fileName}</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={Download}
-              onClick={handleDownload}
-              isLoading={downloading}
-              className="text-xs shrink-0"
-              title="Download original evidence file"
-            >
-              Download
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              icon={ExternalLink}
-              onClick={handleSecureView}
-              isLoading={generatingUrl}
-              className="text-xs shrink-0"
-            >
-              5m Secure View
-            </Button>
-            {isVerifierOrAdmin && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleReRunExtraction}
-                disabled={actionLoading}
-                className="text-xs text-slate-400 hover:text-slate-200"
-                title="Re-run AI OCR pipeline"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${actionLoading ? 'animate-spin' : ''}`} />
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {viewUrlData && (
-          <div className="p-3 rounded-xl bg-cyan-950/30 border border-cyan-500/30 flex items-center justify-between text-xs font-mono text-cyan-300">
-            <div className="flex items-center gap-2">
-              <Lock className="w-4 h-4 text-cyan-400 shrink-0" />
-              <span>Temporary Presigned Vault Stream Active</span>
-            </div>
-            <a
-              href={viewUrlData.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline text-cyan-400 hover:text-cyan-200"
-            >
-              Re-open Tab
-            </a>
+        {/* Status Alerts */}
+        {errorMsg && (
+          <div className="p-3.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-between">
+            <span>{errorMsg}</span>
+            <button onClick={() => setErrorMsg(null)} className="text-rose-400 hover:text-rose-200">
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
 
-        {/* Metadata Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-          <div className="p-3 rounded-xl bg-defense-900/60 border border-slate-800 space-y-1">
-            <span className="text-[11px] text-slate-500 font-mono uppercase block">Associated Case</span>
-            <div className="font-bold text-slate-200">
-              {docData.caseId?.caseNumber || 'CR/2026/XXXX'}
-            </div>
-            <div className="text-slate-400 text-[11px] truncate">
-              {docData.caseId?.title || 'Case Title'}
-            </div>
-          </div>
-
-          <div className="p-3 rounded-xl bg-defense-900/60 border border-slate-800 space-y-1">
-            <span className="text-[11px] text-slate-500 font-mono uppercase block">File Details</span>
-            <div className="font-bold text-slate-200">
-              {formatBytes(docData.fileSize)} • {docData.mimeType}
-            </div>
-            <div className="text-slate-400 text-[11px]">
-              Uploaded: {formatDate(docData.createdAt)}
-            </div>
-          </div>
-
-          <div className="p-3 rounded-xl bg-defense-900/60 border border-slate-800 space-y-1">
-            <span className="text-[11px] text-slate-500 font-mono uppercase block">Uploaded By</span>
-            <div className="font-bold text-slate-200">
-              {docData.uploadedBy?.name || 'Investigating Officer'}
-            </div>
-            <div className="text-slate-400 text-[11px] font-mono">
-              Badge: {docData.uploadedBy?.badgeNumber || 'CCB-9842'} ({docData.uploadedBy?.role || 'officer'})
-            </div>
-          </div>
-
-          <div className="p-3 rounded-xl bg-defense-900/60 border border-slate-800 space-y-1">
-            <span className="text-[11px] text-slate-500 font-mono uppercase block">Storage Encryption</span>
-            <div className="font-bold text-emerald-400 flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5" /> SSE-S3 (AES-256)
-            </div>
-            <div className="text-slate-400 text-[11px] font-mono truncate">
-              Key: {docData.s3Key}
-            </div>
-          </div>
-        </div>
-
-        {/* Cryptographic SHA-256 Hash */}
-        <div className="p-3.5 rounded-xl bg-defense-950 border border-slate-800 space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1.5">
-              <Lock className="w-3.5 h-3.5 text-cyan-400" />
-              Cryptographic SHA-256 Seal
-            </span>
-            <button
-              onClick={handleCopyHash}
-              className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-mono transition-colors"
-            >
-              {copiedHash ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              {copiedHash ? 'Copied' : 'Copy Hash'}
+        {successMsg && (
+          <div className="p-3.5 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs flex items-center justify-between">
+            <span>{successMsg}</span>
+            <button onClick={() => setSuccessMsg(null)} className="text-emerald-400 hover:text-emerald-200">
+              <X className="w-4 h-4" />
             </button>
           </div>
-          <div className="text-xs font-mono text-emerald-400 break-all select-all">
-            {docData.sha256Hash}
+        )}
+
+        {/* Mandatory Legal Authenticity Disclaimer */}
+        <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-500/30 space-y-1.5">
+          <div className="flex items-center gap-2 text-amber-400 text-xs font-bold font-mono">
+            <Info className="w-4 h-4 shrink-0" />
+            <span>FORENSIC SYSTEM LEGAL NOTICE & DISCLAIMER</span>
+          </div>
+          <p className="text-[11px] text-slate-300 leading-relaxed">
+            <strong>AI Extraction Confidence</strong> measures optical text recognition fidelity against digital document pixels.
+            It does <span className="underline decoration-amber-400 font-semibold">NOT</span> certify physical evidentiary validity,
+            legal authenticity, or genuine chain-of-custody prior to digital intake. Verifiers must cross-reference primary source evidence.
+          </p>
+        </div>
+
+        {/* Document Header Info Bar */}
+        <div className="p-4 rounded-xl bg-defense-900/90 border border-slate-800 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-mono font-bold text-cyan-400">
+                  {docData.caseId?.caseNumber || 'CASE DOSSIER'}
+                </span>
+                <Badge variant={docData.status === 'verified' ? 'verified' : docData.status === 'flagged_tampered' ? 'tampered' : 'pending'} size="xs">
+                  {docData.status.replace('_', ' ')}
+                </Badge>
+              </div>
+              <h3 className="text-base font-bold text-slate-100">{docData.title}</h3>
+              <div className="text-xs text-slate-400 font-mono mt-0.5">
+                File: {docData.fileName} • SHA-256: <span className="text-slate-300">{docData.sha256Hash?.substring(0, 16)}...</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-center">
+              <Button
+                variant="secondary"
+                size="sm"
+                className="text-xs gap-1.5 bg-cyan-950/60 border-cyan-500/40 text-cyan-300 hover:bg-cyan-900/60"
+                onClick={handleOpenSecureView}
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                5m Secure View
+              </Button>
+
+              {isVerifierOrAdmin && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-slate-400 hover:text-slate-200"
+                  onClick={handleReRunExtraction}
+                  disabled={actionLoading}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${actionLoading ? 'animate-spin' : ''}`} />
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* AI OCR & Classification Summary Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-800/80">
+            <div className="p-2.5 rounded-lg bg-defense-950/60 border border-slate-800/80 space-y-1">
+              <span className="text-[10px] font-mono text-slate-400 uppercase">AI Classification</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-cyan-300 uppercase font-mono">
+                  {classification.predictedType || docData.documentType}
+                </span>
+                {classification.confidence && (
+                  <span className="text-[10px] font-mono text-slate-400">
+                    ({Math.round(classification.confidence * 100)}%)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="p-2.5 rounded-lg bg-defense-950/60 border border-slate-800/80 space-y-1">
+              <span className="text-[10px] font-mono text-slate-400 uppercase">Average OCR Confidence</span>
+              <div>{getConfidenceBadge(avgConfidence)}</div>
+            </div>
+
+            <div className="p-2.5 rounded-lg bg-defense-950/60 border border-slate-800/80 space-y-1">
+              <span className="text-[10px] font-mono text-slate-400 uppercase">Engine Architecture</span>
+              <div className="text-xs font-mono text-slate-300 truncate">
+                {ocrMetadata.engine || 'Gemini Vision / Fallback OCR'}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* AI Document Intelligence & Interactive Field Reconciliation */}
+        {/* Structured Field Extractions & Verifier Corrections */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-cyan-400" />
-              <h4 className="text-xs font-bold text-slate-200 uppercase font-mono">
-                AI Field Extraction ({docData.documentType?.toUpperCase()} Schema)
+              <h4 className="text-sm font-bold text-slate-200">
+                Document-Specific Extracted Fields ({Object.keys(extractedFields).length})
               </h4>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-mono text-slate-400">Average OCR Confidence:</span>
-              {getConfidenceBadge(avgConfidence)}
-            </div>
+            <span className="text-[11px] font-mono text-slate-400">
+              Schema: <span className="text-amber-400 font-bold uppercase">{docData.documentType}</span>
+            </span>
           </div>
 
           {Object.keys(extractedFields).length === 0 ? (
-            <div className="p-6 text-center rounded-xl bg-defense-900/40 border border-slate-800 space-y-2">
+            <div className="p-8 text-center rounded-xl bg-defense-900/40 border border-slate-800 space-y-2">
               <FileText className="w-8 h-8 text-slate-500 mx-auto" />
               <div className="text-xs text-slate-400">No structured fields extracted yet.</div>
               {isVerifierOrAdmin && (
@@ -435,7 +330,7 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
                 return (
                   <div
                     key={fieldName}
-                    className={`p-3 rounded-xl border transition-all ${
+                    className={`p-3.5 rounded-xl border transition-all ${
                       isCorrected
                         ? 'bg-defense-900/90 border-cyan-500/40 shadow-glow-cyan'
                         : isApproved
@@ -444,24 +339,26 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
                     }`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
-                      <div className="space-y-1 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
+                      {/* Field Metadata & Values */}
+                      <div className="space-y-1.5 flex-1">
+                        <div className="flex items-center gap-2">
                           <span className="text-xs font-mono font-bold text-cyan-300">
                             {fieldName.replace(/([A-Z])/g, ' $1').toUpperCase()}
                           </span>
                           {getConfidenceBadge(fieldData.confidence)}
                           {isCorrected && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-500/40 font-bold">
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-500/40 font-bold">
                               HUMAN CORRECTED
                             </span>
                           )}
                           {isApproved && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-emerald-950 text-emerald-300 border border-emerald-500/40 font-bold">
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-950 text-emerald-300 border border-emerald-500/40 font-bold">
                               CERTIFIED
                             </span>
                           )}
                         </div>
 
+                        {/* Field Value Display or Inline Edit Form */}
                         {isEditing ? (
                           <div className="space-y-2 pt-1">
                             <textarea
@@ -469,7 +366,7 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
                               onChange={(e) => setEditValue(e.target.value)}
                               rows={2}
                               className="w-full px-3 py-2 rounded-lg bg-defense-950 border border-cyan-500/50 text-xs text-slate-100 font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400"
-                              placeholder="Enter verified forensic value..."
+                              placeholder="Enter corrected forensic value..."
                             />
                             <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
                               <span>Original AI: {String(fieldData.aiValue || 'N/A')}</span>
@@ -496,14 +393,16 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
                           </div>
                         ) : (
                           <div className="space-y-1">
+                            {/* Current Effective Value */}
                             <div className="text-xs font-semibold text-slate-100 bg-defense-950/70 p-2 rounded-lg font-mono border border-slate-800">
                               {typeof fieldData.value === 'object'
                                 ? JSON.stringify(fieldData.value)
                                 : String(fieldData.value || 'Not specified')}
                             </div>
 
+                            {/* Non-destructive History audit if corrected */}
                             {isCorrected && (
-                              <div className="p-2 rounded-lg bg-amber-950/20 border border-amber-500/20 text-[11px] font-mono space-y-0.5">
+                              <div className="p-2 rounded-lg bg-amber-950/20 border border-amber-500/20 text-[11px] font-mono space-y-1">
                                 <div className="text-slate-400">
                                   <span className="text-amber-400 font-semibold">Original AI Output:</span>{' '}
                                   <span className="line-through text-slate-500">{String(fieldData.aiValue)}</span>
@@ -521,13 +420,14 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
 
                             {fieldData.sourceReference && (
                               <div className="text-[10px] text-slate-400 font-mono">
-                                Reference: <span className="text-slate-300">{fieldData.sourceReference}</span>
+                                Source Reference: <span className="text-slate-300">{fieldData.sourceReference}</span>
                               </div>
                             )}
                           </div>
                         )}
                       </div>
 
+                      {/* Verifier Field Level Actions */}
                       {isVerifierOrAdmin && !isEditing && (
                         <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
                           <button
@@ -556,15 +456,16 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
           )}
         </div>
 
-        {/* Verification Sign-off Confirm Box */}
+        {/* Verification Sign-off & Tamper Modals */}
         {showVerifyConfirm && (
           <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 space-y-3">
             <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold font-mono">
               <CheckCircle2 className="w-4 h-4" />
-              <span>DIGITAL FORENSIC CERTIFICATION SIGN-OFF</span>
+              <span>DIGITAL CERTIFICATION & SIGN-OFF</span>
             </div>
             <p className="text-xs text-slate-300">
-              Certify that all evidentiary fields have been cross-examined against forensic standards.
+              You are certifying that you have cross-examined the document fields against forensic standards.
+              This action creates an immutable cryptographic audit record.
             </p>
             <input
               type="text"
@@ -584,21 +485,21 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
           </div>
         )}
 
-        {/* Flag Tamper Anomaly Box */}
         {showFlagModal && (
           <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/40 space-y-3">
             <div className="flex items-center gap-2 text-rose-400 text-xs font-bold font-mono">
               <AlertTriangle className="w-4 h-4" />
-              <span>FLAG TAMPERING OR INTEGRITY DISCREPANCY</span>
+              <span>FLAG TAMPERING OR FORENSIC DISCREPANCY</span>
             </div>
             <p className="text-xs text-slate-300">
-              Flagging this document marks it as <span className="text-rose-400 font-bold">FLAGGED_TAMPERED</span> and creates a critical alert.
+              Flagging this document updates its status to <span className="text-rose-400 font-bold">FLAGGED_TAMPERED</span> and
+              logs a critical security incident in the judicial audit hash chain.
             </p>
             <textarea
               value={flagReason}
               onChange={(e) => setFlagReason(e.target.value)}
               rows={2}
-              placeholder="State precise reason for flagging (e.g. signature timestamp disparity, checksum mismatch)..."
+              placeholder="State precise reason for flagging (e.g. signature timestamp disparity, checksum alteration, low fidelity)..."
               className="w-full px-3 py-2 rounded-lg bg-defense-950 border border-rose-500/50 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-400"
             />
             <div className="flex items-center justify-end gap-2">
@@ -612,42 +513,11 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
           </div>
         )}
 
-        {/* Version History Infrastructure */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
-            <History className="w-4 h-4 text-cyan-400" />
-            <span>Version Audit History (v{docData.version || 1})</span>
-          </div>
-
-          <div className="p-3 rounded-xl bg-defense-900/40 border border-slate-800/80 space-y-2">
-            {docData.versions && docData.versions.length > 0 ? (
-              docData.versions.map((ver, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between text-xs py-1.5 border-b border-slate-800/50 last:border-0"
-                >
-                  <div className="flex items-center gap-2 font-mono">
-                    <span className="px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-400 text-[10px] font-bold border border-cyan-800/40">
-                      v{ver.version}
-                    </span>
-                    <span className="text-slate-300">{ver.changeNotes || 'Initial secure upload'}</span>
-                  </div>
-                  <div className="text-slate-500 font-mono text-[11px]">
-                    {formatDate(ver.uploadedAt || docData.createdAt)}
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="text-xs text-slate-400">Initial version v1 locked.</div>
-            )}
-          </div>
-        </div>
-
-        {/* Modal Action Footer */}
-        <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-800">
+        {/* Action Footer Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-800">
           <div className="text-xs text-slate-400 font-mono flex items-center gap-1.5">
             <Lock className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Secured Audit Trail Active</span>
+            <span>Audited Verification Session</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -677,8 +547,8 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
               </>
             )}
 
-            <Button variant="secondary" size="sm" onClick={onClose}>
-              Close Dossier
+            <Button size="sm" variant="secondary" onClick={onClose}>
+              Close
             </Button>
           </div>
         </div>

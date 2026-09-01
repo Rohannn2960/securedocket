@@ -99,6 +99,14 @@ class DocumentService {
       },
     });
 
+    // 8. Trigger AI OCR, Classification & Structured Extraction Pipeline
+    try {
+      const extractionService = require('./extraction.service');
+      await extractionService.extractAndProcessDocument(newDoc._id);
+    } catch (err) {
+      logger.warn(`[Document Ingestion] Automated extraction encountered non-blocking issue: ${err.message}`);
+    }
+
     const populated = await Document.findById(newDoc._id)
       .populate('uploadedBy', 'name email badgeNumber role')
       .populate('caseId', 'caseNumber title status')
@@ -310,7 +318,7 @@ class DocumentService {
     let buffer = await s3Service.getObjectBuffer(doc.s3Key);
     if (!buffer || buffer.length === 0) {
       logger.info(`[Vault Stream] Serving generated official evidentiary dossier plate for doc ${doc._id}`);
-      buffer = s3Service.generateFallbackBuffer(doc);
+      buffer = await s3Service.generateFallbackBuffer(doc);
     }
 
     return {

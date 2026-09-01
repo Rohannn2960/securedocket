@@ -215,7 +215,7 @@ async function seed() {
           uploadedBy: leadOfficer,
         };
 
-        const fileBuffer = s3Service.generateFallbackBuffer(dummyDocMeta);
+        const fileBuffer = await s3Service.generateFallbackBuffer(dummyDocMeta);
         const sha256Hash = calculateSha256(fileBuffer);
         const cleanCaseNum = newCase.caseNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
         const s3Key = `cases/${cleanCaseNum}/${Date.now()}-${docInfo.fileName}`;
@@ -231,6 +231,7 @@ async function seed() {
           },
         });
 
+        const isPending = docInfo.documentType === DOCUMENT_TYPES.FIR || docInfo.documentType === DOCUMENT_TYPES.STATEMENT;
         const createdDoc = await Document.create({
           caseId: newCase._id,
           title: docInfo.title,
@@ -243,7 +244,7 @@ async function seed() {
           mimeType: docInfo.mimeType,
           uploadedBy: leadOfficer._id,
           sha256Hash,
-          status: DOCUMENT_STATUS.VERIFIED,
+          status: isPending ? DOCUMENT_STATUS.PENDING_REVIEW : DOCUMENT_STATUS.VERIFIED,
           version: 1,
           versions: [
             {
@@ -263,7 +264,15 @@ async function seed() {
           },
         });
 
-        console.log(`  📄 Vaulted Document: ${createdDoc.title} [SHA-256: ${createdDoc.sha256Hash.substring(0, 12)}...]`);
+        // Run AI Document Intelligence pipeline
+        try {
+          const extractionService = require('../services/extraction.service');
+          await extractionService.extractAndProcessDocument(createdDoc._id);
+        } catch (err) {
+          logger.warn(`Seed extraction non-critical error: ${err.message}`);
+        }
+
+        console.log(`  📄 Vaulted & Extracted Document: ${createdDoc.title} [Status: ${isPending ? 'PENDING_REVIEW' : 'VERIFIED'}]`);
       }
     }
   }

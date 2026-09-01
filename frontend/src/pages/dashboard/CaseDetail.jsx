@@ -468,6 +468,10 @@ export function CaseDetail() {
         isOpen={isDocDetailOpen}
         onClose={() => setIsDocDetailOpen(false)}
         document={selectedDoc}
+        onUpdated={(updated) => {
+          setSelectedDoc(updated);
+          fetchCaseDetails();
+        }}
       />
     </div>
   );

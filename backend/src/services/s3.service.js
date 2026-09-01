@@ -8,6 +8,7 @@ const {
   DeleteObjectCommand,
 } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const config = require('../config/env');
 const logger = require('../config/logger');
 const ApiError = require('../utils/apiError');
@@ -248,7 +249,7 @@ class S3StorageService {
   /**
    * Generate an official evidentiary visual dossier buffer for seeded records
    */
-  generateFallbackBuffer(doc) {
+  async generateFallbackBuffer(doc) {
     const caseNumber = doc.caseId?.caseNumber || 'CR/2026/0914-HYD';
     const docTitle = doc.title || doc.fileName || 'Evidentiary Record';
     const docType = (doc.documentType || 'EVIDENCE').toUpperCase();
@@ -282,7 +283,7 @@ class S3StorageService {
   <text x="135" y="112" fill="#38bdf8" font-size="12" font-family="monospace" font-weight="600">SECURE DIGITAL DOCUMENT MANAGEMENT SYSTEM (SIH-26190)</text>
 
   <rect x="740" y="75" width="190" height="34" rx="8" fill="#064e3b" stroke="#10b981" stroke-width="1.5"/>
-  <text x="835" y="97" fill="#34d399" font-size="12" font-family="monospace" font-weight="700" text-anchor="middle">✓ CRYPTO SEALED</text>
+  <text x="835" y="97" fill="#34d399" font-size="12" font-family="monospace" font-weight="700" text-anchor="middle">[CRYPTO SEALED]</text>
 
   <line x1="60" y1="140" x2="940" y2="140" stroke="#1e293b" stroke-width="1.5"/>
 
@@ -307,7 +308,7 @@ class S3StorageService {
 
   <!-- SHA-256 Banner -->
   <rect x="70" y="415" width="860" height="85" rx="10" fill="#030712" stroke="#1e293b" stroke-width="1"/>
-  <text x="90" y="445" fill="#0ea5e9" font-size="12" font-family="monospace" font-weight="700">🔒 SHA-256 CRYPTOGRAPHIC INTEGRITY HASH:</text>
+  <text x="90" y="445" fill="#0ea5e9" font-size="12" font-family="monospace" font-weight="700">SHA-256 CRYPTOGRAPHIC INTEGRITY HASH:</text>
   <text x="90" y="475" fill="#34d399" font-size="13" font-family="monospace" font-weight="700">${shaHash}</text>
 
   <!-- Footer Notice -->
@@ -319,84 +320,209 @@ class S3StorageService {
       return Buffer.from(svg, 'utf8');
     }
 
-    // Return standard valid PDF document buffer
-    const escapePdf = (str) => String(str).replace(/[\\()]/g, '');
-    const cleanCase = escapePdf(caseNumber);
-    const cleanTitle = escapePdf(docTitle);
-    const cleanOfficer = escapePdf(officerName);
-    const cleanBadge = escapePdf(officerBadge);
-    const cleanHash = escapePdf(shaHash);
-    const cleanDate = escapePdf(dateStr);
+    // Build 100% compliant PDF using pdf-lib
+    try {
+      const pdfDoc = await PDFDocument.create();
+      const page = pdfDoc.addPage([595.28, 841.89]);
+      const { width, height } = page.getSize();
 
-    const streamContent = `BT
-/F1 18 Tf
-50 730 Td
-(SECURE DIGITAL DOCUMENT MANAGEMENT SYSTEM) Tj
-/F1 12 Tf
-0 -25 Td
-(SIH-26190 Evidentiary Vault Record) Tj
-/F1 10 Tf
-0 -30 Td
-(------------------------------------------------------------------------------------------------------) Tj
-0 -25 Td
-(Case Number: ${cleanCase}) Tj
-0 -20 Td
-(Document Title: ${cleanTitle}) Tj
-0 -20 Td
-(Document Category: ${escapePdf(docType)}) Tj
-0 -20 Td
-(Ingested By: ${cleanOfficer} [Badge: ${cleanBadge}]) Tj
-0 -20 Td
-(Timestamp: ${cleanDate}) Tj
-0 -20 Td
-(Storage Security: Server-Side Encrypted SSE-S3 AES-256) Tj
-0 -25 Td
-(------------------------------------------------------------------------------------------------------) Tj
-0 -25 Td
-(CRYPTOGRAPHIC INTEGRITY SEAL [SHA-256]:) Tj
-0 -20 Td
-(${cleanHash}) Tj
-0 -35 Td
-(NOTICE: This file was accessed under a 5-Minute Presigned Token with active audit logging.) Tj
-0 -18 Td
-(Section 65B Indian Evidence Act / BNSS Compliant Cryptographic Certificate.) Tj
-ET`;
+      const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      const monoFont = await pdfDoc.embedFont(StandardFonts.CourierBold);
 
-    const streamBytes = Buffer.from(streamContent, 'utf8');
-    const pdfData = `%PDF-1.4
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
-endobj
-4 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
-endobj
-5 0 obj
-<< /Length ${streamBytes.length} >>
-stream
-${streamContent}
-endstream
-endobj
-xref
-0 6
-0000000000 65535 f 
-0000000009 00000 n 
-0000000058 00000 n 
-0000000115 00000 n 
-0000000237 00000 n 
-0000000314 00000 n 
-trailer
-<< /Size 6 /Root 1 0 R >>
-startxref
-${400 + streamBytes.length}
-%%EOF`;
+      // Clean ASCII helper to prevent WinAnsi encoding errors
+      const cleanAscii = (str) => String(str || '').replace(/[^\x20-\x7E]/g, ' ');
 
-    return Buffer.from(pdfData, 'utf8');
+      // Background border
+      page.drawRectangle({
+        x: 18,
+        y: 18,
+        width: width - 36,
+        height: height - 36,
+        borderWidth: 1.5,
+        borderColor: rgb(0.12, 0.22, 0.35),
+        color: rgb(0.98, 0.99, 1.0),
+      });
+
+      // Top header banner
+      page.drawRectangle({
+        x: 18,
+        y: height - 95,
+        width: width - 36,
+        height: 77,
+        color: rgb(0.04, 0.08, 0.16),
+      });
+
+      page.drawText('GOVERNMENT OF INDIA - LAW ENFORCEMENT & FORENSIC SERVICES', {
+        x: 35,
+        y: height - 48,
+        size: 10,
+        font: boldFont,
+        color: rgb(0.2, 0.75, 1.0),
+      });
+
+      page.drawText('SECURE DIGITAL DOCUMENT MANAGEMENT SYSTEM (SIH-26190)', {
+        x: 35,
+        y: height - 72,
+        size: 13,
+        font: boldFont,
+        color: rgb(1, 1, 1),
+      });
+
+      // Crypto Seal Badge in header
+      page.drawRectangle({
+        x: width - 175,
+        y: height - 75,
+        width: 145,
+        height: 28,
+        borderWidth: 1,
+        borderColor: rgb(0.1, 0.7, 0.4),
+        color: rgb(0.02, 0.25, 0.15),
+      });
+
+      page.drawText('[CRYPTO SEALED]', {
+        x: width - 160,
+        y: height - 63,
+        size: 9.5,
+        font: boldFont,
+        color: rgb(0.2, 0.9, 0.5),
+      });
+
+      // Divider line
+      page.drawLine({
+        start: { x: 30, y: height - 110 },
+        end: { x: width - 30, y: height - 110 },
+        thickness: 1,
+        color: rgb(0.8, 0.85, 0.9),
+      });
+
+      let curY = height - 135;
+
+      const drawRow = (label1, val1, label2, val2) => {
+        page.drawText(cleanAscii(label1).toUpperCase(), { x: 35, y: curY, size: 8, font: boldFont, color: rgb(0.4, 0.5, 0.6) });
+        page.drawText(cleanAscii(val1), { x: 35, y: curY - 14, size: 9.5, font: boldFont, color: rgb(0.1, 0.15, 0.25) });
+
+        if (label2) {
+          page.drawText(cleanAscii(label2).toUpperCase(), { x: 310, y: curY, size: 8, font: boldFont, color: rgb(0.4, 0.5, 0.6) });
+          page.drawText(cleanAscii(val2), { x: 310, y: curY - 14, size: 9.5, font: boldFont, color: rgb(0.1, 0.15, 0.25) });
+        }
+        curY -= 42;
+      };
+
+      drawRow('Case Dossier Number', caseNumber, 'Evidentiary Category', `${docType} RECORD`);
+      drawRow('Document Title', docTitle, 'Investigating Officer', `${officerName} (Badge: ${officerBadge})`);
+      drawRow('Vault Ingestion Timestamp', dateStr, 'Storage Security', 'SSE-S3 AES-256 (Restricted Clearance)');
+
+      curY -= 10;
+
+      // SHA-256 Seal Box
+      page.drawRectangle({
+        x: 35,
+        y: curY - 50,
+        width: width - 70,
+        height: 55,
+        borderWidth: 1,
+        borderColor: rgb(0.2, 0.7, 0.9),
+        color: rgb(0.03, 0.08, 0.15),
+      });
+
+      page.drawText('SHA-256 CRYPTOGRAPHIC INTEGRITY HASH:', {
+        x: 45,
+        y: curY - 16,
+        size: 8.5,
+        font: boldFont,
+        color: rgb(0.2, 0.8, 1.0),
+      });
+
+      page.drawText(cleanAscii(shaHash), {
+        x: 45,
+        y: curY - 36,
+        size: 8,
+        font: monoFont,
+        color: rgb(0.3, 0.9, 0.6),
+      });
+
+      curY -= 70;
+
+      // Extracted fields summary if available
+      const fields = doc.extractedFields || {};
+      const fieldEntries = Object.entries(fields);
+
+      if (fieldEntries.length > 0) {
+        const boxHeight = Math.min(180, 40 + fieldEntries.length * 20);
+        page.drawRectangle({
+          x: 35,
+          y: curY - boxHeight,
+          width: width - 70,
+          height: boxHeight,
+          borderWidth: 1,
+          borderColor: rgb(0.8, 0.85, 0.9),
+          color: rgb(0.95, 0.97, 1.0),
+        });
+
+        page.drawText(`AUTOMATED AI OCR & CLASSIFICATION (${docType} SCHEMA)`, {
+          x: 45,
+          y: curY - 18,
+          size: 8.5,
+          font: boldFont,
+          color: rgb(0.1, 0.3, 0.6),
+        });
+
+        let sumY = curY - 36;
+        for (const [key, fieldData] of fieldEntries.slice(0, 6)) {
+          const val = typeof fieldData.value === 'object' ? JSON.stringify(fieldData.value) : String(fieldData.value || 'N/A');
+          page.drawText(`* ${cleanAscii(key)}: ${cleanAscii(val).substring(0, 75)}`, {
+            x: 45,
+            y: sumY,
+            size: 8,
+            font: regularFont,
+            color: rgb(0.2, 0.25, 0.35),
+          });
+          sumY -= 18;
+        }
+      }
+
+      // Footer compliance notice
+      page.drawRectangle({
+        x: 35,
+        y: 35,
+        width: width - 70,
+        height: 60,
+        borderWidth: 1,
+        borderColor: rgb(0.8, 0.85, 0.9),
+        color: rgb(0.92, 0.94, 0.97),
+      });
+
+      page.drawText('CHAIN-OF-CUSTODY & STATUTORY COMPLIANCE NOTICE:', {
+        x: 45,
+        y: 75,
+        size: 8,
+        font: boldFont,
+        color: rgb(0.2, 0.3, 0.4),
+      });
+
+      page.drawText('This file is streamed via a 5-Minute Time-To-Live (TTL) Single-Use Signed Token with immutable audit logging.', {
+        x: 45,
+        y: 60,
+        size: 7.5,
+        font: regularFont,
+        color: rgb(0.3, 0.35, 0.45),
+      });
+
+      page.drawText('Cryptographically validated under Section 65B Indian Evidence Act / Bharatiya Sakshya Adhiniyam (BSA 2023).', {
+        x: 45,
+        y: 46,
+        size: 7.5,
+        font: boldFont,
+        color: rgb(0.1, 0.4, 0.6),
+      });
+
+      const pdfBytes = await pdfDoc.save();
+      return Buffer.from(pdfBytes);
+    } catch (err) {
+      logger.error('[S3 Vault] Failed creating PDF buffer with pdf-lib', { error: err.message });
+      return Buffer.from(`SECURE EVIDENCE RECORD: ${docTitle}\nCase: ${caseNumber}\nHash: ${shaHash}`, 'utf8');
+    }
   }
 
   /**

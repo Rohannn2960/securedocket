@@ -274,6 +274,10 @@ export function Documents() {
         isOpen={isDetailModalOpen}
         onClose={() => setIsDetailModalOpen(false)}
         document={selectedDoc}
+        onUpdated={(updated) => {
+          setSelectedDoc(updated);
+          fetchDocuments();
+        }}
       />
     </div>
   );

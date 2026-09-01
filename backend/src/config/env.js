@@ -42,6 +42,7 @@ function validateEnv() {
     // AI & OCR
     gemini: {
       apiKey: process.env.GEMINI_API_KEY || '',
+      confidenceThreshold: parseFloat(process.env.OCR_CONFIDENCE_THRESHOLD) || 0.80,
     },
 
     // Rate Limiting
