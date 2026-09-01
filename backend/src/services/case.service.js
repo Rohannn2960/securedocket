@@ -99,9 +99,10 @@ class CaseService {
 
     // Role-based boundary enforcement: Officers MUST be assigned
     if (user.role === ROLES.OFFICER) {
-      const isLead = caseItem.leadOfficer?._id?.toString() === user.id.toString();
-      const isAssigned = caseItem.assignedOfficers?.some(
-        (o) => o._id?.toString() === user.id.toString()
+      const leadId = caseItem.leadOfficer?._id ? caseItem.leadOfficer._id.toString() : caseItem.leadOfficer?.toString();
+      const isLead = leadId === user.id.toString();
+      const isAssigned = Array.isArray(caseItem.assignedOfficers) && caseItem.assignedOfficers.some(
+        (o) => (o._id ? o._id.toString() : o.toString()) === user.id.toString()
       );
 
       if (!isLead && !isAssigned) {
@@ -257,7 +258,7 @@ class CaseService {
       throw new ApiError(HTTP_STATUS.BAD_REQUEST, 'No valid active personnel found for provided IDs');
     }
 
-    const currentIds = caseItem.assignedOfficers.map((id) => id.toString());
+    const currentIds = caseItem.assignedOfficers.map((id) => (id._id ? id._id.toString() : id.toString()));
     const newIds = validUsers.map((u) => u._id.toString());
     const merged = Array.from(new Set([...currentIds, ...newIds]));
 
@@ -271,6 +272,19 @@ class CaseService {
 
     logger.info(`Assigned ${newIds.length} officers to case ${caseItem.caseNumber}`, { caseId, userId: user.id });
     return populated;
+  }
+
+  /**
+   * Get active officers roster for case assignment
+   */
+  async getOfficersRoster() {
+    return User.find({
+      role: { $in: [ROLES.OFFICER, ROLES.ADMIN] },
+      isActive: true,
+    })
+      .select('_id name email badgeNumber department role')
+      .sort({ name: 1 })
+      .lean();
   }
 
   /**

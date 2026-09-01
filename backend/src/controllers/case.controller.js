@@ -108,6 +108,15 @@ async function getCaseStatistics(req, res) {
   });
 }
 
+async function getOfficersRoster(req, res) {
+  const roster = await caseService.getOfficersRoster();
+
+  return ApiResponse.success(res, {
+    message: 'Active officers roster retrieved successfully',
+    data: roster,
+  });
+}
+
 module.exports = {
   getCases,
   getCase,
@@ -115,4 +124,5 @@ module.exports = {
   updateCase,
   assignOfficers,
   getCaseStatistics,
+  getOfficersRoster,
 };

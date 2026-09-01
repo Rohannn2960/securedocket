@@ -6,6 +6,7 @@ const {
   updateCase,
   assignOfficers,
   getCaseStatistics,
+  getOfficersRoster,
 } = require('../../controllers/case.controller');
 const { requireAuth } = require('../../middleware/auth.middleware');
 const { requireRole } = require('../../middleware/rbac.middleware');
@@ -28,6 +29,20 @@ router.get(
   '/statistics',
   requireRole(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN, ROLES.AUDITOR),
   asyncWrapper(getCaseStatistics)
+);
+
+// GET /api/v1/cases/roster/officers (Active officers roster for assignment)
+router.get(
+  '/roster/officers',
+  requireRole(ROLES.OFFICER, ROLES.ADMIN),
+  asyncWrapper(getOfficersRoster)
+);
+
+// Alias: GET /api/v1/cases/officers-roster
+router.get(
+  '/officers-roster',
+  requireRole(ROLES.OFFICER, ROLES.ADMIN),
+  asyncWrapper(getOfficersRoster)
 );
 
 // GET /api/v1/cases (Role-scoped case list)

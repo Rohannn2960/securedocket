@@ -23,7 +23,6 @@ import { Alert } from '../../components/common/Alert';
 import { Spinner } from '../../components/common/Spinner';
 import { useAuth } from '../../hooks/useAuth';
 import { caseService } from '../../services/caseService';
-import { userService } from '../../services/authService';
 import { formatDate, truncateHash } from '../../utils/formatters';
 
 const STATUS_OPTIONS = [
@@ -86,13 +85,14 @@ export function CaseDetail() {
     setIsAssignModalOpen(true);
     setAssignError(null);
     try {
-      const res = await userService.getUsers({ role: 'officer' });
-      setAvailableOfficers(res.data || []);
-      if (res.data?.length > 0) {
-        setSelectedOfficerId(res.data[0]._id);
+      const res = await caseService.getOfficersRoster();
+      const officersList = res.data || [];
+      setAvailableOfficers(officersList);
+      if (officersList.length > 0) {
+        setSelectedOfficerId(officersList[0]._id);
       }
     } catch (err) {
-      setAssignError('Failed to fetch officer roster');
+      setAssignError(err?.message || 'Failed to fetch officer roster');
     }
   };
 
@@ -133,6 +133,39 @@ export function CaseDetail() {
   }
 
   const canEdit = user?.role === 'officer' || user?.role === 'admin';
+
+  // Helper functions for bulletproof rendering of officers
+  const getOfficerId = (officer) => {
+    if (!officer) return '';
+    if (typeof officer === 'object') return officer._id?.toString() || '';
+    return officer.toString();
+  };
+
+  const getOfficerName = (officer) => {
+    if (!officer) return 'Assigned Officer';
+    if (typeof officer === 'object') return officer.name || officer.email || 'Assigned Officer';
+    return `Officer (${truncateHash(officer.toString(), 4, 4)})`;
+  };
+
+  const getOfficerEmail = (officer) => {
+    if (!officer) return '—';
+    if (typeof officer === 'object') return officer.email || '—';
+    return '—';
+  };
+
+  const getOfficerBadge = (officer, fallback = 'CCB-XXXX') => {
+    if (!officer) return fallback;
+    if (typeof officer === 'object') return officer.badgeNumber || fallback;
+    return fallback;
+  };
+
+  const leadOfficerId = getOfficerId(caseData.leadOfficer);
+  const coAssignedOfficers = Array.isArray(caseData.assignedOfficers)
+    ? caseData.assignedOfficers.filter((o) => {
+        const oId = getOfficerId(o);
+        return oId && oId !== leadOfficerId;
+      })
+    : [];
 
   return (
     <div className="space-y-6">
@@ -194,7 +227,7 @@ export function CaseDetail() {
                 ))}
               </select>
             ) : (
-              <Badge variant="cyan">{caseData.status.replace('_', ' ')}</Badge>
+              <Badge variant="cyan">{caseData.status ? caseData.status.replace('_', ' ') : 'OPEN'}</Badge>
             )}
           </div>
         </div>
@@ -249,7 +282,7 @@ export function CaseDetail() {
               </div>
             ) : (
               <div className="space-y-3">
-                {caseData.documents.map((doc) => (
+                {caseData.documents?.map((doc) => (
                   <div
                     key={doc._id}
                     className="p-3.5 rounded-xl bg-defense-900/60 border border-slate-800/80 hover:border-slate-700 transition-all flex items-center justify-between"
@@ -296,40 +329,45 @@ export function CaseDetail() {
               <div className="p-3 rounded-xl bg-cyan-950/30 border border-cyan-500/30 space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-cyan-300">
-                    {caseData.leadOfficer?.name || 'Lead Officer'}
+                    {getOfficerName(caseData.leadOfficer)}
                   </span>
                   <Badge variant="cyan" size="xs">
                     LEAD
                   </Badge>
                 </div>
                 <div className="text-[11px] text-slate-400 font-mono">
-                  {caseData.leadOfficer?.email}
+                  {getOfficerEmail(caseData.leadOfficer)}
                 </div>
                 <div className="text-[10px] text-slate-500 font-mono">
-                  Badge: {caseData.leadOfficer?.badgeNumber || 'CCB-9842'}
+                  Badge: {getOfficerBadge(caseData.leadOfficer, 'CCB-9842')}
                 </div>
               </div>
 
               {/* Co-Assigned Officers */}
-              {caseData.assignedOfficers
-                ?.filter((o) => o._id !== caseData.leadOfficer?._id)
-                .map((officer) => (
+              {coAssignedOfficers.map((officer) => {
+                const oId = getOfficerId(officer);
+                return (
                   <div
-                    key={officer._id}
+                    key={oId}
                     className="p-3 rounded-xl bg-defense-900/60 border border-slate-800 space-y-1"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-slate-200">{officer.name}</span>
+                      <span className="text-xs font-semibold text-slate-200">
+                        {getOfficerName(officer)}
+                      </span>
                       <Badge variant="default" size="xs">
                         ASSIGNED
                       </Badge>
                     </div>
-                    <div className="text-[11px] text-slate-400 font-mono">{officer.email}</div>
+                    <div className="text-[11px] text-slate-400 font-mono">
+                      {getOfficerEmail(officer)}
+                    </div>
                     <div className="text-[10px] text-slate-500 font-mono">
-                      Badge: {officer.badgeNumber || 'CCB-XXXX'}
+                      Badge: {getOfficerBadge(officer, 'CCB-XXXX')}
                     </div>
                   </div>
-                ))}
+                );
+              })}
             </div>
           </Card>
         </div>
@@ -344,33 +382,40 @@ export function CaseDetail() {
       >
         {assignError && <Alert variant="error">{assignError}</Alert>}
 
-        <form onSubmit={handleAssignOfficerSubmit} className="space-y-4">
-          <div>
-            <label className="text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5 block">
-              Select Officer from Active Roster
-            </label>
-            <select
-              value={selectedOfficerId}
-              onChange={(e) => setSelectedOfficerId(e.target.value)}
-              className="w-full bg-defense-900 border border-slate-700/80 rounded-lg p-2.5 text-xs text-slate-100 focus:outline-none focus:border-cyan-500"
-            >
-              {availableOfficers.map((o) => (
-                <option key={o._id} value={o._id}>
-                  {o.name} ({o.email}) - {o.badgeNumber || 'No Badge'}
-                </option>
-              ))}
-            </select>
+        {availableOfficers.length === 0 && !assignError ? (
+          <div className="py-6 text-center text-xs text-slate-400">
+            <Spinner size="sm" className="mb-2 mx-auto" />
+            Loading officer roster...
           </div>
+        ) : (
+          <form onSubmit={handleAssignOfficerSubmit} className="space-y-4">
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5 block">
+                Select Officer from Active Roster
+              </label>
+              <select
+                value={selectedOfficerId}
+                onChange={(e) => setSelectedOfficerId(e.target.value)}
+                className="w-full bg-defense-900 border border-slate-700/80 rounded-lg p-2.5 text-xs text-slate-100 focus:outline-none focus:border-cyan-500"
+              >
+                {availableOfficers.map((o) => (
+                  <option key={o._id} value={o._id}>
+                    {o.name} ({o.email}) - {o.badgeNumber || 'No Badge'}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <div className="pt-2 flex justify-end gap-3">
-            <Button variant="secondary" type="button" onClick={() => setIsAssignModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" type="submit" isLoading={assignLoading}>
-              Assign to Case
-            </Button>
-          </div>
-        </form>
+            <div className="pt-2 flex justify-end gap-3">
+              <Button variant="secondary" type="button" onClick={() => setIsAssignModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" type="submit" isLoading={assignLoading} disabled={!selectedOfficerId}>
+                Assign to Case
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );

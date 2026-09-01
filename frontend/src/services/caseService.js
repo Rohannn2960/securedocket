@@ -21,6 +21,10 @@ export const caseService = {
     return api.post(`/cases/${id}/officers`, { officerIds });
   },
 
+  getOfficersRoster: async () => {
+    return api.get('/cases/roster/officers');
+  },
+
   getCaseStatistics: async () => {
     return api.get('/cases/statistics');
   },

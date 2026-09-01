@@ -126,7 +126,7 @@ async function runCaseTests() {
     // ----------------------------------------------------
     // TEST 1: Create Case by Officer (Valid payload)
     // ----------------------------------------------------
-    console.log('[1/11] Testing Case Registration by Officer...');
+    console.log('[1/12] Testing Case Registration by Officer...');
     const createRes = await request(app)
       .post('/api/v1/cases')
       .set('Cookie', officer1Cookies)
@@ -149,7 +149,7 @@ async function runCaseTests() {
     // ----------------------------------------------------
     // TEST 2: Duplicate Case Number Rejection
     // ----------------------------------------------------
-    console.log('\n[2/11] Testing Duplicate Case Number Conflict Rejection...');
+    console.log('\n[2/12] Testing Duplicate Case Number Conflict Rejection...');
     const dupRes = await request(app)
       .post('/api/v1/cases')
       .set('Cookie', officer1Cookies)
@@ -164,7 +164,7 @@ async function runCaseTests() {
     // ----------------------------------------------------
     // TEST 3: Validation Error Handling (Missing Fields / Invalid ObjectIds)
     // ----------------------------------------------------
-    console.log('\n[3/11] Testing Validation Bounds (Express-Validator)...');
+    console.log('\n[3/12] Testing Validation Bounds (Express-Validator)...');
     const badReqRes = await request(app)
       .post('/api/v1/cases')
       .set('Cookie', officer1Cookies)
@@ -193,7 +193,7 @@ async function runCaseTests() {
     // ----------------------------------------------------
     // TEST 4: Assigned Officer Can Access Assigned Case
     // ----------------------------------------------------
-    console.log('\n[4/11] Testing Assigned Officer Case Access...');
+    console.log('\n[4/12] Testing Assigned Officer Case Access...');
     const viewAssignedRes = await request(app)
       .get(`/api/v1/cases/${createdCaseId}`)
       .set('Cookie', officer1Cookies);
@@ -204,7 +204,7 @@ async function runCaseTests() {
     // ----------------------------------------------------
     // TEST 5: SECURITY ASSERTION: Officer CANNOT Access Unassigned Case
     // ----------------------------------------------------
-    console.log('\n[5/11] Testing Officer Isolation: Accessing Unassigned Case...');
+    console.log('\n[5/12] Testing Officer Isolation: Accessing Unassigned Case...');
     const viewUnassignedRes = await request(app)
       .get(`/api/v1/cases/${unassignedCaseId}`)
       .set('Cookie', officer1Cookies); // Officer 1 attempts to view Officer 2's unassigned case
@@ -215,7 +215,7 @@ async function runCaseTests() {
     // ----------------------------------------------------
     // TEST 6: Admin Global Oversight Access
     // ----------------------------------------------------
-    console.log('\n[6/11] Testing Admin Global Case Access...');
+    console.log('\n[6/12] Testing Admin Global Case Access...');
     const adminViewRes = await request(app)
       .get(`/api/v1/cases/${unassignedCaseId}`)
       .set('Cookie', adminCookies);
@@ -225,7 +225,7 @@ async function runCaseTests() {
     // ----------------------------------------------------
     // TEST 7: Case Update by Permitted Assigned Officer
     // ----------------------------------------------------
-    console.log('\n[7/11] Testing Permitted Case Updates by Assigned Officer...');
+    console.log('\n[7/12] Testing Permitted Case Updates by Assigned Officer...');
     const updateRes = await request(app)
       .patch(`/api/v1/cases/${createdCaseId}`)
       .set('Cookie', officer1Cookies)
@@ -242,7 +242,7 @@ async function runCaseTests() {
     // ----------------------------------------------------
     // TEST 8: Mass Assignment Prevention
     // ----------------------------------------------------
-    console.log('\n[8/11] Testing Mass Assignment & Immutable Fields Protection...');
+    console.log('\n[8/12] Testing Mass Assignment & Immutable Fields Protection...');
     const massAssignRes = await request(app)
       .patch(`/api/v1/cases/${createdCaseId}`)
       .set('Cookie', officer1Cookies)
@@ -259,7 +259,7 @@ async function runCaseTests() {
     // ----------------------------------------------------
     // TEST 9: Officer Assignment Workflow
     // ----------------------------------------------------
-    console.log('\n[9/11] Testing Officer Assignment Workflow...');
+    console.log('\n[9/12] Testing Officer Assignment Workflow...');
     const assignRes = await request(app)
       .post(`/api/v1/cases/${createdCaseId}/officers`)
       .set('Cookie', officer1Cookies)
@@ -277,9 +277,20 @@ async function runCaseTests() {
     assert('Newly assigned Officer 2 can now access the case (HTTP 200 OK)', officer2NowHasAccess.status === 200);
 
     // ----------------------------------------------------
-    // TEST 10: Verifier & Auditor Read-Only Boundaries
+    // TEST 10: Officers Roster Endpoint for Assignment Modal
     // ----------------------------------------------------
-    console.log('\n[10/11] Testing Verifier & Auditor Modification Restrictions...');
+    console.log('\n[10/12] Testing Officers Roster Endpoint for Case Assignment Modal...');
+    const rosterRes = await request(app)
+      .get('/api/v1/cases/roster/officers')
+      .set('Cookie', officer1Cookies);
+
+    assert('Officer successfully retrieves active officers roster (HTTP 200 OK)', rosterRes.status === 200);
+    assert('Roster contains array of active officers', Array.isArray(rosterRes.body.data) && rosterRes.body.data.length >= 2);
+
+    // ----------------------------------------------------
+    // TEST 11: Verifier & Auditor Read-Only Boundaries
+    // ----------------------------------------------------
+    console.log('\n[11/12] Testing Verifier & Auditor Modification Restrictions...');
     const verifierUpdateRes = await request(app)
       .patch(`/api/v1/cases/${createdCaseId}`)
       .set('Cookie', verifierCookies)
@@ -295,9 +306,9 @@ async function runCaseTests() {
     assert('Auditor cannot modify case details (HTTP 403 Forbidden)', auditorUpdateRes.status === 403);
 
     // ----------------------------------------------------
-    // TEST 11: Case Statistics Scoping
+    // TEST 12: Case Statistics Scoping
     // ----------------------------------------------------
-    console.log('\n[11/11] Testing Case Statistics Aggregations...');
+    console.log('\n[12/12] Testing Case Statistics Aggregations...');
     const statsRes = await request(app)
       .get('/api/v1/cases/statistics')
       .set('Cookie', adminCookies);
