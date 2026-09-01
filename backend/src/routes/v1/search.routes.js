@@ -1,7 +1,9 @@
 const express = require('express');
-const { authenticate, authorizeRoles } = require('../../middlewares/auth.middleware');
+const { requireAuth } = require('../../middleware/auth.middleware');
+const { requireRole } = require('../../middleware/rbac.middleware');
 const { ROLES } = require('../../constants/roles');
 const { performSemanticSearch } = require('../../controllers/search.controller');
+const asyncWrapper = require('../../utils/asyncWrapper');
 
 const router = express.Router();
 
@@ -12,9 +14,9 @@ const router = express.Router();
  */
 router.post(
   '/semantic',
-  authenticate,
-  authorizeRoles(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN),
-  performSemanticSearch
+  requireAuth,
+  requireRole([ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN]),
+  asyncWrapper(performSemanticSearch)
 );
 
 module.exports = router;

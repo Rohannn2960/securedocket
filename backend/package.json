@@ -8,7 +8,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "lint": "eslint src/",
-    "test": "jest"
+    "test": "jest tests/"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1123.0",
@@ -36,5 +36,13 @@
     "mongodb-memory-server": "^11.2.0",
     "nodemon": "^3.1.4",
     "supertest": "^7.2.2"
+  },
+  "jest": {
+    "testMatch": [
+      "<rootDir>/tests/**/*.test.js"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/"
+    ]
   }
 }
