@@ -12,4 +12,16 @@ export const caseService = {
   createCase: async (caseData) => {
     return api.post('/cases', caseData);
   },
+
+  updateCase: async (id, updateData) => {
+    return api.patch(`/cases/${id}`, updateData);
+  },
+
+  assignOfficers: async (id, officerIds) => {
+    return api.post(`/cases/${id}/officers`, { officerIds });
+  },
+
+  getCaseStatistics: async () => {
+    return api.get('/cases/statistics');
+  },
 };

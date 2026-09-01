@@ -8,6 +8,13 @@ const CASE_STATUS = Object.freeze({
   ARCHIVED: 'archived',
 });
 
+const CASE_PRIORITY = Object.freeze({
+  LOW: 'low',
+  MEDIUM: 'medium',
+  HIGH: 'high',
+  CRITICAL: 'critical',
+});
+
 const caseSchema = new mongoose.Schema(
   {
     caseNumber: {
@@ -22,29 +29,37 @@ const caseSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Case title is required'],
       trim: true,
+      minlength: [3, 'Title must be at least 3 characters'],
       maxlength: [200, 'Title cannot exceed 200 characters'],
     },
     description: {
       type: String,
       trim: true,
       maxlength: [5000, 'Description cannot exceed 5000 characters'],
+      default: '',
     },
     status: {
       type: String,
-      enum: Object.values(CASE_STATUS),
+      enum: {
+        values: Object.values(CASE_STATUS),
+        message: 'Status {VALUE} is not a valid case status',
+      },
       default: CASE_STATUS.OPEN,
       index: true,
     },
     jurisdiction: {
       type: String,
       trim: true,
+      default: 'Central Cyber Police Station',
     },
     incidentDate: {
       type: Date,
+      default: Date.now,
     },
     leadOfficer: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
+      required: [true, 'Lead investigating officer is required'],
       index: true,
     },
     assignedOfficers: [
@@ -54,11 +69,17 @@ const caseSchema = new mongoose.Schema(
       },
     ],
     metadata: {
-      tags: [String],
+      tags: {
+        type: [String],
+        default: [],
+      },
       priority: {
         type: String,
-        enum: ['low', 'medium', 'high', 'critical'],
-        default: 'medium',
+        enum: {
+          values: Object.values(CASE_PRIORITY),
+          message: 'Priority {VALUE} is not valid',
+        },
+        default: CASE_PRIORITY.MEDIUM,
       },
     },
   },
@@ -67,6 +88,8 @@ const caseSchema = new mongoose.Schema(
   }
 );
 
+// Indexes for high performance and role-scoped querying
+caseSchema.index({ assignedOfficers: 1, status: 1 });
 caseSchema.index({ status: 1, createdAt: -1 });
 
 const Case = mongoose.model('Case', caseSchema);
@@ -74,4 +97,5 @@ const Case = mongoose.model('Case', caseSchema);
 module.exports = {
   Case,
   CASE_STATUS,
+  CASE_PRIORITY,
 };

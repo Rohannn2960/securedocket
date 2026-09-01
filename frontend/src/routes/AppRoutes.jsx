@@ -7,6 +7,7 @@ import { TwoFactorVerify } from '../pages/auth/TwoFactorVerify';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { Overview } from '../pages/dashboard/Overview';
 import { Cases } from '../pages/dashboard/Cases';
+import { CaseDetail } from '../pages/dashboard/CaseDetail';
 import { Documents } from '../pages/dashboard/Documents';
 import { AuditLogs } from '../pages/dashboard/AuditLogs';
 import { SemanticSearch } from '../pages/dashboard/SemanticSearch';
@@ -31,6 +32,7 @@ export function AppRoutes() {
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<Overview />} />
           <Route path="/dashboard/cases" element={<Cases />} />
+          <Route path="/dashboard/cases/:id" element={<CaseDetail />} />
           <Route path="/dashboard/documents" element={<Documents />} />
           <Route path="/dashboard/search" element={<SemanticSearch />} />
 

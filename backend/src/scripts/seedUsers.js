@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const { connectDB, disconnectDB } = require('../config/database');
-const { User, RefreshToken } = require('../models');
+const { User, Case, RefreshToken, CASE_STATUS, CASE_PRIORITY } = require('../models');
 const { ROLES } = require('../constants/roles');
 const logger = require('../config/logger');
 
@@ -12,6 +12,15 @@ const SEED_USERS = [
     password: 'OfficerSecurePass123!',
     role: ROLES.OFFICER,
     badgeNumber: 'CCB-9842',
+    department: 'Central Cyber Crime Police Station',
+    totpSecret: 'KVKFKRCPNZQUYMLXOVYDSQKJKZDTSRLD',
+  },
+  {
+    name: 'Sub-Inspector Ananya Rao',
+    email: 'ananya.officer@police.gov.in',
+    password: 'OfficerSecurePass123!',
+    role: ROLES.OFFICER,
+    badgeNumber: 'CCB-7719',
     department: 'Central Cyber Crime Police Station',
     totpSecret: 'KVKFKRCPNZQUYMLXOVYDSQKJKZDTSRLD',
   },
@@ -44,13 +53,55 @@ const SEED_USERS = [
   },
 ];
 
+const SEED_CASES = [
+  {
+    caseNumber: 'CR/2026/0891-BLR',
+    title: 'Cyber Heist & Fake Invoicing Scheme',
+    description: 'Investigation into unauthorized transaction routing and digital ledger tampering involving bogus shell suppliers.',
+    status: CASE_STATUS.UNDER_INVESTIGATION,
+    jurisdiction: 'Central Cyber Crime Police Station, Bengaluru',
+    priority: CASE_PRIORITY.HIGH,
+    tags: ['cybercrime', 'banking', 'forgery', 'ledger'],
+  },
+  {
+    caseNumber: 'CR/2026/0877-DEL',
+    title: 'Narcotics Seizure & Forensic Ballistics Investigation',
+    description: 'High-profile contraband recovery and firearm ballistics evidence matching against national ballistic records.',
+    status: CASE_STATUS.PENDING_TRIAL,
+    jurisdiction: 'Special Investigation Cell, New Delhi',
+    priority: CASE_PRIORITY.CRITICAL,
+    tags: ['narcotics', 'ballistics', 'special-cell'],
+  },
+  {
+    caseNumber: 'CR/2026/0862-MUM',
+    title: 'Land Record Tampering & Forgery Syndicate',
+    description: 'Systematic mutation record alteration across municipal archives; forensic OCR verification required.',
+    status: CASE_STATUS.OPEN,
+    jurisdiction: 'Economic Offences Wing, Mumbai',
+    priority: CASE_PRIORITY.MEDIUM,
+    tags: ['eow', 'land-records', 'forgery'],
+  },
+  {
+    caseNumber: 'CR/2026/0914-HYD',
+    title: 'Identity Theft & Biometric Replay Fraud',
+    description: 'Falsified credential generation and synthetic KYC verification bypass across digital payment gateways.',
+    status: CASE_STATUS.UNDER_INVESTIGATION,
+    jurisdiction: 'Cyber Crime Police Station, Hyderabad',
+    priority: CASE_PRIORITY.HIGH,
+    tags: ['biometrics', 'identity-theft', 'kyc-fraud'],
+  },
+];
+
 async function seed() {
-  logger.info('Connecting to database to seed default role accounts...');
+  logger.info('Connecting to database to seed default role accounts and active legal cases...');
   await connectDB();
 
-  // Clear existing users and tokens
+  // Clear existing users, cases, and tokens
   await User.deleteMany({ email: { $in: SEED_USERS.map((u) => u.email) } });
+  await Case.deleteMany({});
   await RefreshToken.deleteMany({});
+
+  const createdUsers = {};
 
   for (const userConfig of SEED_USERS) {
     const passwordHash = await User.hashPassword(userConfig.password);
@@ -68,15 +119,38 @@ async function seed() {
       isActive: true,
     });
 
+    createdUsers[user.email] = user;
     console.log(`[SEED] Created ${user.role.toUpperCase()}: ${user.email} (Badge: ${user.badgeNumber})`);
   }
 
+  // Seed legal cases assigned to Inspector Vikram Singh & Sub-Inspector Ananya Rao
+  const leadOfficer = createdUsers['officer@police.gov.in'];
+  const secondOfficer = createdUsers['ananya.officer@police.gov.in'];
+
+  for (const caseData of SEED_CASES) {
+    const newCase = await Case.create({
+      caseNumber: caseData.caseNumber,
+      title: caseData.title,
+      description: caseData.description,
+      status: caseData.status,
+      jurisdiction: caseData.jurisdiction,
+      leadOfficer: leadOfficer._id,
+      assignedOfficers: [leadOfficer._id, secondOfficer._id],
+      metadata: {
+        priority: caseData.priority,
+        tags: caseData.tags,
+      },
+    });
+
+    console.log(`[SEED] Created CASE: ${newCase.caseNumber} - ${newCase.title} (Status: ${newCase.status})`);
+  }
+
   console.log('\n======================================================');
-  console.log('✅ OFFICIAL SEED ACCOUNTS READY (Passwords: <Role>SecurePass123!)');
-  console.log('1. Officer:  officer@police.gov.in      | TOTP Secret: KVKFKRCPNZQUYMLXOVYDSQKJKZDTSRLD');
-  console.log('2. Verifier: verifier@forensics.gov.in  | TOTP Secret: JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP');
-  console.log('3. Admin:    admin@investigation.gov.in | TOTP Secret: MZXW6YTBOI2G63TOMZXW6YTBOI2G63TO');
-  console.log('4. Auditor:  auditor@judiciary.gov.in   | TOTP Secret: NBSWY3DPEHPK3PXPNBSWY3DPEHPK3PXP');
+  console.log('✅ OFFICIAL SEED ACCOUNTS & CASES READY (Pass: <Role>SecurePass123!)');
+  console.log('1. Officer:  officer@police.gov.in      | TOTP: KVKFKRCPNZQUYMLXOVYDSQKJKZDTSRLD');
+  console.log('2. Verifier: verifier@forensics.gov.in  | TOTP: JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP');
+  console.log('3. Admin:    admin@investigation.gov.in | TOTP: MZXW6YTBOI2G63TOMZXW6YTBOI2G63TO');
+  console.log('4. Auditor:  auditor@judiciary.gov.in   | TOTP: NBSWY3DPEHPK3PXPNBSWY3DPEHPK3PXP');
   console.log('======================================================\n');
 
   await disconnectDB();
