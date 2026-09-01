@@ -1,24 +1,56 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Lock, Mail, ArrowRight, ShieldCheck, UserCheck } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, ArrowRight, UserCheck, KeyRound } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
 import { Alert } from '../../components/common/Alert';
 
+const ROLE_PRESETS = [
+  {
+    label: 'Lead Officer',
+    email: 'officer@police.gov.in',
+    pass: 'OfficerSecurePass123!',
+    totpSecret: 'KVKFKRCPNZQUYMLXOVYDSQKJKZDTSRLD',
+    role: 'officer',
+  },
+  {
+    label: 'OCR Verifier',
+    email: 'verifier@forensics.gov.in',
+    pass: 'VerifierSecurePass123!',
+    totpSecret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+    role: 'verifier',
+  },
+  {
+    label: 'Audit Officer',
+    email: 'auditor@judiciary.gov.in',
+    pass: 'AuditorSecurePass123!',
+    totpSecret: 'NBSWY3DPEHPK3PXPNBSWY3DPEHPK3PXP',
+    role: 'auditor',
+  },
+  {
+    label: 'System Admin',
+    email: 'admin@investigation.gov.in',
+    pass: 'AdminSecurePass123!',
+    totpSecret: 'MZXW6YTBOI2G63TOMZXW6YTBOI2G63TO',
+    role: 'admin',
+  },
+];
+
 export function Login() {
   const navigate = useNavigate();
-  const { login, loginAsDemo } = useAuth();
+  const { login } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [activeSecret, setActiveSecret] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email || !password) {
-      setError('Please enter both official email and security credentials.');
+      setError('Please enter both official email and security passphrase.');
       return;
     }
 
@@ -26,8 +58,18 @@ export function Login() {
     setError(null);
     try {
       const res = await login(email, password);
-      if (res?.data?.require2FA) {
-        navigate('/verify-2fa', { state: { userId: res.data.tempSessionUserId } });
+      const data = res?.data;
+
+      if (data?.require2FA || data?.require2FASetup) {
+        navigate('/verify-2fa', {
+          state: {
+            tempToken: data.tempToken,
+            userId: data.userId,
+            email: data.email || email,
+            require2FASetup: data.require2FASetup,
+            totpSecret: activeSecret,
+          },
+        });
       } else {
         navigate('/dashboard');
       }
@@ -38,9 +80,11 @@ export function Login() {
     }
   };
 
-  const handleQuickDemo = (role) => {
-    loginAsDemo(role);
-    navigate('/dashboard');
+  const handleApplyPreset = (preset) => {
+    setEmail(preset.email);
+    setPassword(preset.pass);
+    setActiveSecret(preset.totpSecret);
+    setError(null);
   };
 
   return (
@@ -52,7 +96,7 @@ export function Login() {
         </div>
         <h2 className="text-2xl font-bold text-slate-100">Sign in to Case Vault</h2>
         <p className="text-xs text-slate-400 mt-1">
-          Provide your official credentials or select a role preset below.
+          Step 1 of 2: Verify official credentials to initiate 2FA security challenge.
         </p>
       </div>
 
@@ -80,57 +124,30 @@ export function Login() {
         />
 
         <Button type="submit" variant="primary" icon={ArrowRight} isLoading={loading} className="w-full">
-          Authenticate & Verify Credentials
+          Verify Credentials & Continue to 2FA
         </Button>
       </form>
 
-      {/* Quick Demo Access Buttons for SIH Jury & Testing */}
+      {/* Official Seed Role Presets for Easy Jury / Demo Testing */}
       <div className="pt-6 border-t border-slate-800/80 space-y-3">
         <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-semibold flex items-center justify-between">
-          <span>Prototype Role Presets</span>
-          <span className="text-[10px] text-cyan-400 font-mono">1-Click Launch</span>
+          <span>Official Seed Role Presets</span>
+          <span className="text-[10px] text-cyan-400 font-mono">Click to Pre-fill</span>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            icon={UserCheck}
-            onClick={() => handleQuickDemo('officer')}
-            className="text-xs"
-          >
-            Lead Officer
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            icon={UserCheck}
-            onClick={() => handleQuickDemo('verifier')}
-            className="text-xs"
-          >
-            OCR Verifier
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            icon={UserCheck}
-            onClick={() => handleQuickDemo('auditor')}
-            className="text-xs"
-          >
-            Audit Officer
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            icon={UserCheck}
-            onClick={() => handleQuickDemo('admin')}
-            className="text-xs"
-          >
-            System Admin
-          </Button>
+          {ROLE_PRESETS.map((p) => (
+            <Button
+              key={p.role}
+              type="button"
+              variant={email === p.email ? 'emerald' : 'secondary'}
+              size="sm"
+              icon={UserCheck}
+              onClick={() => handleApplyPreset(p)}
+              className="text-xs justify-start"
+            >
+              {p.label}
+            </Button>
+          ))}
         </div>
       </div>
     </div>

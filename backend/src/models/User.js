@@ -36,23 +36,26 @@ const userSchema = new mongoose.Schema(
     },
     totpSecret: {
       type: String,
-      select: false, // TOTP seed secret hidden from general queries
+      select: false, // TOTP seed secret strictly hidden from queries
     },
     totpEnabled: {
       type: Boolean,
       default: false,
+      index: true,
     },
-    refreshTokenHash: {
-      type: String,
-      select: false,
+    totpVerifiedAt: {
+      type: Date,
+      default: null,
     },
     isActive: {
       type: Boolean,
       default: true,
+      index: true,
     },
     badgeNumber: {
       type: String,
       trim: true,
+      index: true,
     },
     department: {
       type: String,
@@ -60,6 +63,9 @@ const userSchema = new mongoose.Schema(
     },
     lastLoginAt: {
       type: Date,
+    },
+    lastLoginIp: {
+      type: String,
     },
   },
   {
@@ -69,22 +75,36 @@ const userSchema = new mongoose.Schema(
 
 // Method to verify password against bcrypt hash
 userSchema.methods.comparePassword = async function (plainPassword) {
+  if (!this.passwordHash) {
+    throw new Error('passwordHash field must be selected to compare password');
+  }
   return bcrypt.compare(plainPassword, this.passwordHash);
 };
 
-// Static helper to hash password with configured salt rounds
+// Static helper to hash password with configured salt rounds (>= 12)
 userSchema.statics.hashPassword = async function (plainPassword) {
-  return bcrypt.hash(plainPassword, config.bcryptSaltRounds);
+  const saltRounds = Math.max(config.bcryptSaltRounds, 12);
+  return bcrypt.hash(plainPassword, saltRounds);
 };
 
 // Return safe user object stripped of sensitive auth credentials
 userSchema.methods.toSafeObject = function () {
-  const obj = this.toObject();
+  const obj = this.toObject ? this.toObject() : { ...this };
   delete obj.passwordHash;
   delete obj.totpSecret;
-  delete obj.refreshTokenHash;
+  delete obj.__v;
   return obj;
 };
+
+// Ensure JSON.stringify serialization also removes sensitive fields automatically
+userSchema.set('toJSON', {
+  transform: (doc, ret) => {
+    delete ret.passwordHash;
+    delete ret.totpSecret;
+    delete ret.__v;
+    return ret;
+  },
+});
 
 const User = mongoose.model('User', userSchema);
 

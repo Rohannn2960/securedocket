@@ -16,7 +16,7 @@ const auditLogSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: [true, 'Actor User ID is required'],
+      required: false, // Nullable for unauthenticated / failed security events
       index: true,
     },
     action: {
@@ -62,7 +62,7 @@ const auditLogSchema = new mongoose.Schema(
     },
   },
   {
-    timestamps: { createdAt: true, updatedAt: false }, // Audit logs are strictly immutable (no updates)
+    timestamps: { createdAt: true, updatedAt: false }, // Audit logs are strictly immutable
   }
 );
 

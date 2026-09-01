@@ -7,7 +7,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Check existing session profile on boot
+  // Initialize session by querying /auth/profile (which reads the httpOnly cookie)
   useEffect(() => {
     async function initAuth() {
       try {
@@ -16,17 +16,7 @@ export function AuthProvider({ children }) {
           setUser(response.data.user);
         }
       } catch {
-        // Fallback for prototype preview demo state if server offline
-        const storedDemo = localStorage.getItem('demo_user_session');
-        if (storedDemo) {
-          try {
-            setUser(JSON.parse(storedDemo));
-          } catch {
-            setUser(null);
-          }
-        } else {
-          setUser(null);
-        }
+        setUser(null);
       } finally {
         setLoading(false);
       }
@@ -36,25 +26,23 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = async (email, password) => {
-    const res = await authService.login(email, password);
+    return authService.login(email, password);
+  };
+
+  const complete2FA = async (totpCode, tempToken, userId) => {
+    const res = await authService.verify2FA(totpCode, tempToken, userId);
     if (res?.data?.user) {
       setUser(res.data.user);
-      localStorage.setItem('demo_user_session', JSON.stringify(res.data.user));
     }
     return res;
   };
 
-  const loginAsDemo = (role = 'officer') => {
-    const demoUser = {
-      _id: 'demo-officer-001',
-      name: role === 'auditor' ? 'Senior Auditor Rao' : 'Inspector Vikram Singh',
-      email: `${role}@investigation.gov.in`,
-      role,
-      badgeNumber: 'CCB-9842',
-      department: 'Central Cyber & Financial Crime Division',
-    };
-    setUser(demoUser);
-    localStorage.setItem('demo_user_session', JSON.stringify(demoUser));
+  const complete2FASetup = async (totpCode, secret, tempToken) => {
+    const res = await authService.verifySetup2FA(totpCode, secret, tempToken);
+    if (res?.data?.user) {
+      setUser(res.data.user);
+    }
+    return res;
   };
 
   const logout = async () => {
@@ -64,11 +52,20 @@ export function AuthProvider({ children }) {
       // Ignore network errors on logout
     }
     setUser(null);
-    localStorage.removeItem('demo_user_session');
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, loginAsDemo, logout, isAuthenticated: Boolean(user) }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        login,
+        complete2FA,
+        complete2FASetup,
+        logout,
+        isAuthenticated: Boolean(user),
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

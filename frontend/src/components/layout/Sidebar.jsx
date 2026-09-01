@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Briefcase, FileText, Link2, Sparkles, ShieldCheck, Database, Key } from 'lucide-react';
+import { LayoutDashboard, Briefcase, FileText, Link2, Sparkles, ShieldCheck, Users } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { clsx } from 'clsx';
 
@@ -42,6 +42,13 @@ export function Sidebar() {
       icon: Sparkles,
       badge: 'Gemini',
       roles: ['officer', 'verifier', 'admin', 'auditor'],
+    },
+    {
+      to: '/dashboard/users',
+      label: 'Personnel Roster',
+      icon: Users,
+      badge: 'Admin',
+      roles: ['admin'],
     },
   ];
 

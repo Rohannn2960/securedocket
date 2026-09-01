@@ -3,19 +3,20 @@ const { HTTP_STATUS, ERROR_CODES } = require('../constants/statusCodes');
 const logger = require('../config/logger');
 
 /**
- * RBAC Authorization Guard
- * @param {...string} allowedRoles - Permitted roles for the target route
+ * Reusable Role-Based Access Control Middleware
+ * Checks if authenticated user possesses one of the authorized roles for the route.
+ * @param {...string} allowedRoles - Permitted roles (e.g. 'admin', 'officer', 'verifier', 'auditor')
  */
-function authorizeRoles(...allowedRoles) {
+function requireRole(...allowedRoles) {
   return (req, res, next) => {
     if (!req.user) {
-      return next(new ApiError(HTTP_STATUS.UNAUTHORIZED, 'Authentication required before authorization check', ERROR_CODES.AUTH_REQUIRED));
+      return next(new ApiError(HTTP_STATUS.UNAUTHORIZED, 'Authentication required before clearance check', ERROR_CODES.AUTH_REQUIRED));
     }
 
     const userRole = req.user.role;
 
     if (!allowedRoles.includes(userRole)) {
-      logger.warn(`Unauthorized access attempt by user ${req.user.id} (${userRole}) to ${req.originalUrl}`, {
+      logger.warn(`Clearance violation: User ${req.user.id} (${userRole}) attempted unauthorized access to ${req.method} ${req.originalUrl}`, {
         userId: req.user.id,
         role: userRole,
         url: req.originalUrl,
@@ -25,7 +26,7 @@ function authorizeRoles(...allowedRoles) {
       return next(
         new ApiError(
           HTTP_STATUS.FORBIDDEN,
-          `Access forbidden: Role '${userRole}' does not have sufficient clearance for this resource. Required: [${allowedRoles.join(', ')}]`,
+          `Access forbidden: Role '${userRole}' does not have clearance for this operation. Required role(s): [${allowedRoles.join(', ')}]`,
           ERROR_CODES.INSUFFICIENT_PERMISSIONS
         )
       );
@@ -36,5 +37,6 @@ function authorizeRoles(...allowedRoles) {
 }
 
 module.exports = {
-  authorizeRoles,
+  requireRole,
+  authorizeRoles: requireRole, // Alias for backward compatibility
 };
