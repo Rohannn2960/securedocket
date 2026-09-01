@@ -53,3 +53,7 @@ temp/
 *.sln
 *.sw?
 Thumbs.db
+
+# Documentation Exports
+PROJECT_DOCUMENTATION.md
+
