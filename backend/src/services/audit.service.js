@@ -70,7 +70,7 @@ async function verifyAuditChainIntegrity(limit = 1000) {
   const records = await AuditLog.find().sort({ timestamp: 1, _id: 1 }).limit(limit).lean();
 
   if (records.length === 0) {
-    return { valid: true, totalRecords: 0, corruptedIndex: -1 };
+    return { valid: true, checkedEntries: 0, firstBrokenEntry: null };
   }
 
   let previousHash = GENESIS_HASH;
@@ -83,8 +83,8 @@ async function verifyAuditChainIntegrity(limit = 1000) {
       logger.error(`Audit chain broken at index ${i}: previousHash mismatch`, { recordId: record._id });
       return {
         valid: false,
-        totalRecords: records.length,
-        corruptedRecordId: record._id,
+        checkedEntries: records.length,
+        firstBrokenEntry: record._id,
         brokenIndex: i,
         reason: 'PREVIOUS_HASH_MISMATCH',
       };
@@ -105,8 +105,8 @@ async function verifyAuditChainIntegrity(limit = 1000) {
       logger.error(`Audit payload tampering detected at index ${i}`, { recordId: record._id });
       return {
         valid: false,
-        totalRecords: records.length,
-        corruptedRecordId: record._id,
+        checkedEntries: records.length,
+        firstBrokenEntry: record._id,
         brokenIndex: i,
         reason: 'PAYLOAD_HASH_TAMPERED',
       };
@@ -117,7 +117,7 @@ async function verifyAuditChainIntegrity(limit = 1000) {
 
   return {
     valid: true,
-    totalRecords: records.length,
+    checkedEntries: records.length,
     latestHash: previousHash,
   };
 }

@@ -5,7 +5,9 @@ const { ERROR_CODES, HTTP_STATUS } = require('../constants/statusCodes');
 const { ROLES } = require('../constants/roles');
 const { validateUploadedFile, generateServerS3Key } = require('../utils/fileValidator');
 const s3Service = require('./s3.service');
-const { calculateSha256, timingSafeEqual } = require('../utils/crypto');
+const auditService = require('./audit.service');
+const { calculateSha256, timingSafeEqual, decryptDocumentFields } = require('../utils/crypto');
+const config = require('../config/env');
 const logger = require('../config/logger');
 
 class DocumentService {
@@ -178,8 +180,11 @@ class DocumentService {
       Document.countDocuments(query),
     ]);
 
+    // Decrypt any sensitive fields before returning
+    const decryptedDocs = documents.map(doc => decryptDocumentFields(doc, config.masterEncryptionKey));
+
     return {
-      documents,
+      documents: decryptedDocs,
       pagination: {
         total,
         page: pageNum,
@@ -220,7 +225,7 @@ class DocumentService {
       }
     }
 
-    return doc;
+    return decryptDocumentFields(doc, config.masterEncryptionKey);
   }
 
   /**
@@ -236,6 +241,15 @@ class DocumentService {
       doc._id.toString(),
       disposition
     );
+
+    // Record audit entry
+    await auditService.recordAuditEntry({
+      userId: user.id,
+      action: 'DOCUMENT_VIEW',
+      documentId: doc._id,
+      caseId: doc.caseId,
+      details: { expiresInSeconds, disposition },
+    });
 
     logger.info(`[Secure Access] Generated presigned view URL for document ${doc._id}`, {
       userId: user.id,

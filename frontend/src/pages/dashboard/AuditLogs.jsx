@@ -1,65 +1,56 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link2, ShieldCheck, CheckCircle2, RefreshCw, AlertTriangle, User, Clock, Terminal } from 'lucide-react';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { Badge } from '../../components/common/Badge';
 import { Alert } from '../../components/common/Alert';
 import { truncateHash, formatDate } from '../../utils/formatters';
+import { auditService } from '../../services/auditService';
 
 export function AuditLogs() {
   const [verifying, setVerifying] = useState(false);
   const [chainStatus, setChainStatus] = useState(null);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const [auditLogs] = useState([
-    {
-      id: 'block-003',
-      action: 'DOCUMENT_VERIFY',
-      actor: 'Forensic Verifier Sharma (EMP-8821)',
-      role: 'verifier',
-      target: 'Forensic Ballistics Report V2 (CR/2026/0891-BLR)',
-      timestamp: '2026-08-31T09:15:00Z',
-      previousHash: '2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae',
-      currentHash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
-      ip: '10.24.18.92',
-      details: { verifiedConfidence: 99.1, sealStatus: 'APPROVED' },
-    },
-    {
-      id: 'block-002',
-      action: 'DOCUMENT_UPLOAD',
-      actor: 'Inspector Vikram Singh (EMP-9842)',
-      role: 'officer',
-      target: 'FIR-891-Certified.pdf (CR/2026/0891-BLR)',
-      timestamp: '2026-08-30T10:14:00Z',
-      previousHash: 'fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9',
-      currentHash: '2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae',
-      ip: '10.24.18.45',
-      details: { s3Key: 'cases/CR-0891/FIR_891_certified.pdf', mimeType: 'application/pdf' },
-    },
-    {
-      id: 'block-001',
-      action: 'CASE_CREATE',
-      actor: 'Inspector Vikram Singh (EMP-9842)',
-      role: 'officer',
-      target: 'Dossier CR/2026/0891-BLR',
-      timestamp: '2026-08-30T09:30:00Z',
-      previousHash: '0000000000000000000000000000000000000000000000000000000000000000',
-      currentHash: 'fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9',
-      ip: '10.24.18.45',
-      details: { title: 'Cyber Heist & Fake Invoicing Scheme' },
-    },
-  ]);
+  useEffect(() => {
+    fetchAuditLogs();
+  }, []);
 
-  const handleVerifyChain = () => {
+  const fetchAuditLogs = async () => {
+    try {
+      setLoading(true);
+      const res = await auditService.getAuditLogs({ limit: 50 });
+      setAuditLogs(res.data);
+    } catch (error) {
+      console.error('Failed to fetch audit logs:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyChain = async () => {
     setVerifying(true);
-    setTimeout(() => {
+    setChainStatus(null);
+    try {
+      const res = await auditService.verifyAuditChain();
       setChainStatus({
-        valid: true,
-        checkedBlocks: auditLogs.length,
+        valid: res.data.valid,
+        checkedEntries: res.data.checkedEntries,
+        firstBrokenEntry: res.data.firstBrokenEntry,
+        reason: res.data.reason,
         verifiedAt: new Date().toISOString(),
       });
+    } catch (error) {
+      console.error('Failed to verify chain:', error);
+    } finally {
       setVerifying(false);
-    }, 800);
+    }
   };
+
+  if (loading) {
+    return <div className="text-slate-400">Loading audit trail...</div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -88,17 +79,21 @@ export function AuditLogs() {
       {chainStatus && (
         <Alert
           variant={chainStatus.valid ? 'success' : 'error'}
-          title={chainStatus.valid ? 'Hash Chain Integrity Verified: 100% Intact' : 'INTEGRITY ALERT: Chain Discontinuity Detected'}
+          title={chainStatus.valid ? 'Chain Integrity Verified' : 'Chain Integrity Compromised'}
         >
-          Verified {chainStatus.checkedBlocks} sequential cryptographic blocks. All previous-to-current block SHA-256 links match zero modifications or deletions. Verified at {formatDate(chainStatus.verifiedAt)}.
+          {chainStatus.valid ? (
+            `Verified ${chainStatus.checkedEntries} sequential cryptographic entries. All previous-to-current block SHA-256 links match zero modifications or deletions. Verified at ${formatDate(chainStatus.verifiedAt)}.`
+          ) : (
+            `Failed verification at entry ${chainStatus.firstBrokenEntry}. Reason: ${chainStatus.reason}.`
+          )}
         </Alert>
       )}
 
       {/* Chained Blocks Timeline */}
-      <div className="space-y-4">
+      <div className="space-y-4 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-800 before:to-transparent">
         {auditLogs.map((log, index) => (
           <div
-            key={log.id}
+            key={log._id}
             className="glass-panel p-5 rounded-2xl border border-slate-800 space-y-4 hover:border-indigo-500/40 transition-all relative overflow-hidden"
           >
             {/* Block Header */}
@@ -107,7 +102,9 @@ export function AuditLogs() {
                 <Badge variant="indigo" size="sm">
                   {log.action}
                 </Badge>
-                <span className="text-xs font-semibold text-slate-200">{log.target}</span>
+                <span className="text-xs font-semibold text-slate-200">
+                  {log.documentId ? (log.documentId.title || 'Document') : (log.caseId?.title || 'System Event')}
+                </span>
               </div>
               <div className="flex items-center gap-4 text-xs font-mono text-slate-400">
                 <span className="flex items-center gap-1">
@@ -115,7 +112,7 @@ export function AuditLogs() {
                   {formatDate(log.timestamp)}
                 </span>
                 <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                  IP: {log.ip}
+                  IP: {log.ipAddress || 'unknown'}
                 </span>
               </div>
             </div>
@@ -124,10 +121,16 @@ export function AuditLogs() {
             <div className="text-xs text-slate-300 flex items-center gap-2">
               <User className="w-4 h-4 text-cyan-400" />
               <span>Actor:</span>
-              <span className="font-semibold text-slate-100">{log.actor}</span>
-              <Badge variant="default" size="xs">
-                {log.role}
-              </Badge>
+              {log.userId ? (
+                <>
+                  <span className="font-semibold text-slate-100">{log.userId.name}</span>
+                  <Badge variant="default" size="xs">
+                    {log.userId.role}
+                  </Badge>
+                </>
+              ) : (
+                <span className="font-semibold text-slate-400 italic">System</span>
+              )}
             </div>
 
             {/* Cryptographic Link Panel (Previous Hash -> Current Hash) */}

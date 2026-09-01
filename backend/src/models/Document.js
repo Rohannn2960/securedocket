@@ -128,6 +128,16 @@ const documentSchema = new mongoose.Schema(
     extractedFields: {
       type: mongoose.Schema.Types.Mixed,
       default: {},
+      // Sensitive fields may be encrypted and stored as:
+      // {
+      //   isEncrypted: true,
+      //   ciphertext: "hex_string",
+      //   iv: "hex_string",
+      //   authTag: "hex_string",
+      //   confidence: Number,
+      //   status: String,
+      //   ...
+      // }
     },
     classification: {
       predictedType: {

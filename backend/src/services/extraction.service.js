@@ -8,6 +8,44 @@ const ApiError = require('../utils/apiError');
 const { HTTP_STATUS, ERROR_CODES } = require('../constants/statusCodes');
 const config = require('../config/env');
 const logger = require('../config/logger');
+const { encryptAES256GCM } = require('../utils/crypto');
+
+const SENSITIVE_FIELDS = new Set([
+  'complainant',
+  'complainant_name',
+  'accused',
+  'accused_name',
+  'witness',
+  'witness_name',
+  'address',
+  'phone',
+  'identification_number',
+  'sections_laws',
+  'person_name'
+]);
+
+/**
+ * Helper to encrypt a field object's values if it is sensitive
+ */
+function encryptFieldValues(fieldObj) {
+  if (!SENSITIVE_FIELDS.has(fieldObj.field)) {
+    return fieldObj;
+  }
+
+  const encryptIfString = (val) => {
+    if (typeof val === 'string' && val.trim().length > 0) {
+      return encryptAES256GCM(val, config.masterEncryptionKey);
+    }
+    return val;
+  };
+
+  fieldObj.aiValue = encryptIfString(fieldObj.aiValue);
+  fieldObj.humanValue = encryptIfString(fieldObj.humanValue);
+  fieldObj.value = encryptIfString(fieldObj.value);
+  fieldObj.isEncrypted = true;
+
+  return fieldObj;
+}
 
 class ExtractionService {
   /**
@@ -63,7 +101,7 @@ class ExtractionService {
         // Preserve previous human corrections if re-running extraction
         const existingField = doc.extractedFields && doc.extractedFields[f.field];
         if (existingField && existingField.isCorrected) {
-          structuredFields[f.field] = {
+          structuredFields[f.field] = encryptFieldValues({
             field: f.field,
             aiValue: f.value,
             humanValue: existingField.humanValue,
@@ -74,9 +112,9 @@ class ExtractionService {
             isCorrected: true,
             correctedBy: existingField.correctedBy,
             correctedAt: existingField.correctedAt,
-          };
+          });
         } else {
-          structuredFields[f.field] = {
+          structuredFields[f.field] = encryptFieldValues({
             field: f.field,
             aiValue: f.value,
             humanValue: null,
@@ -87,7 +125,7 @@ class ExtractionService {
             isCorrected: false,
             correctedBy: null,
             correctedAt: null,
-          };
+          });
         }
       }
     }
@@ -178,7 +216,7 @@ class ExtractionService {
     const previousValue = existing.value;
     const aiOriginalValue = existing.aiValue !== undefined ? existing.aiValue : previousValue;
 
-    doc.extractedFields[fieldName] = {
+    doc.extractedFields[fieldName] = encryptFieldValues({
       ...existing,
       field: fieldName,
       aiValue: aiOriginalValue, // Preserve original AI value
@@ -188,7 +226,7 @@ class ExtractionService {
       status: 'corrected',
       correctedBy: user.id,
       correctedAt: new Date(),
-    };
+    });
 
     doc.markModified('extractedFields');
     await doc.save();
@@ -386,8 +424,11 @@ class ExtractionService {
       Document.countDocuments(query),
     ]);
 
+    const { decryptDocumentFields } = require('../utils/crypto');
+    const decryptedDocs = documents.map(doc => decryptDocumentFields(doc, config.masterEncryptionKey));
+
     return {
-      documents,
+      documents: decryptedDocs,
       pagination: {
         total,
         page: pageNum,

@@ -29,6 +29,7 @@ function validateEnv() {
       accessExpiresIn: process.env.JWT_ACCESS_EXPIRATION || '15m',
       refreshExpiresIn: process.env.JWT_REFRESH_EXPIRATION || '7d',
     },
+    masterEncryptionKey: process.env.MASTER_ENCRYPTION_KEY || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
     bcryptSaltRounds: parseInt(process.env.BCRYPT_SALT_ROUNDS, 10) || 12,
 
     // AWS S3
@@ -69,6 +70,10 @@ function validateEnv() {
 
     if (config.jwt.accessSecret.length < 32 || config.jwt.refreshSecret.length < 32) {
       throw new Error('CRITICAL SECURITY ERROR: JWT secrets must be at least 32 characters long in production.');
+    }
+
+    if (!/^[a-f0-9]{64}$/i.test(config.masterEncryptionKey)) {
+      throw new Error('CRITICAL SECURITY ERROR: MASTER_ENCRYPTION_KEY must be exactly 64 hexadecimal characters (32 bytes) for AES-256.');
     }
   }
 
