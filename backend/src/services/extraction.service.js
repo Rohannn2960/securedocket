@@ -8,6 +8,7 @@ const ApiError = require('../utils/apiError');
 const { HTTP_STATUS, ERROR_CODES } = require('../constants/statusCodes');
 const config = require('../config/env');
 const logger = require('../config/logger');
+const vectorService = require('./vector.service');
 const { encryptAES256GCM } = require('../utils/crypto');
 
 const SENSITIVE_FIELDS = new Set([
@@ -157,6 +158,15 @@ class ExtractionService {
       rawTextLength: ocrResult.ocrMetadata?.rawTextLength || (ocrResult.rawText ? ocrResult.rawText.length : 0),
     };
     doc.extractedText = ocrResult.rawText || '';
+
+    // Generate semantic embedding
+    if (doc.extractedText) {
+      const embedding = await vectorService.generateEmbedding(doc.extractedText);
+      if (embedding) {
+        doc.embeddingVector = embedding;
+        doc.markModified('embeddingVector');
+      }
+    }
 
     // Mark modified for mixed schema
     doc.markModified('extractedFields');

@@ -6,6 +6,7 @@ const caseRoutes = require('./case.routes');
 const documentRoutes = require('./document.routes');
 const verificationRoutes = require('./verification.routes');
 const auditRoutes = require('./audit.routes');
+const searchRoutes = require('./search.routes');
 
 const router = express.Router();
 
@@ -16,5 +17,6 @@ router.use('/cases', caseRoutes);
 router.use('/documents', documentRoutes);
 router.use('/verification', verificationRoutes);
 router.use('/audit', auditRoutes);
+router.use('/search', searchRoutes);
 
 module.exports = router;

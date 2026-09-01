@@ -1,9 +1,17 @@
 const logger = require('../config/logger');
+const config = require('../config/env');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 /**
  * Semantic Embedding & Vector Search Service Contract
  */
 class VectorService {
+  constructor() {
+    this.apiKey = config.gemini.apiKey || '';
+    this.genAI = this.apiKey ? new GoogleGenerativeAI(this.apiKey) : null;
+    this.modelName = 'text-embedding-004';
+  }
+
   /**
    * Calculate Cosine Similarity between two numerical vectors
    * @param {number[]} vecA
@@ -33,9 +41,26 @@ class VectorService {
    * Generate 768-dimensional text embedding vector
    */
   async generateEmbedding(text) {
-    logger.info(`[Vector Service] Generating semantic embedding for text (${text.length} chars)`);
-    // Placeholder embedding vector representation
-    return Array.from({ length: 768 }, (_, i) => Math.sin(i + text.length) * 0.05);
+    if (!text || text.trim() === '') {
+      return null;
+    }
+
+    if (!this.genAI) {
+      logger.warn('[Vector Service] Gemini API key not configured. Returning empty vector.');
+      return null;
+    }
+
+    try {
+      logger.info(`[Vector Service] Generating semantic embedding for text (${text.length} chars)`);
+      const model = this.genAI.getGenerativeModel({ model: this.modelName });
+      
+      const result = await model.embedContent(text);
+      const embedding = result.embedding;
+      return embedding.values; // Should be a 768-dimensional array
+    } catch (error) {
+      logger.error(`[Vector Service] Failed to generate embedding: ${error.message}`);
+      return null; // Return null instead of failing the whole pipeline
+    }
   }
 }
 

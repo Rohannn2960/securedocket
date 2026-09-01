@@ -1,0 +1,97 @@
+const Document = require('../models/Document');
+const { Case } = require('../models/Case');
+const vectorService = require('./vector.service');
+const { ApiError } = require('../utils/ApiError');
+const { HTTP_STATUS, ERROR_CODES } = require('../constants/statusCodes');
+const { ROLES } = require('../constants/roles');
+const logger = require('../config/logger');
+
+class SearchService {
+  /**
+   * Perform a semantic search across documents using cosine similarity.
+   * Enforces role-based access control.
+   */
+  async semanticSearch({ query, caseIdFilter, user }) {
+    if (!query || query.trim() === '') {
+      throw new ApiError(HTTP_STATUS.BAD_REQUEST, 'Search query is required', ERROR_CODES.VALIDATION_ERROR);
+    }
+
+    logger.info(`[Search Service] User ${user._id} searching for: "${query}"`);
+
+    // 1. Generate Query Embedding
+    const queryEmbedding = await vectorService.generateEmbedding(query);
+    if (!queryEmbedding) {
+      throw new ApiError(HTTP_STATUS.INTERNAL_SERVER_ERROR, 'Failed to generate embedding for search query', ERROR_CODES.INTERNAL_SERVER_ERROR);
+    }
+
+    // 2. Authorization Boundaries
+    const filter = {};
+    if (caseIdFilter) {
+      filter.caseId = caseIdFilter;
+    }
+
+    if (user.role === ROLES.OFFICER) {
+      // Officers can only search within cases assigned to them
+      const assignedCases = await Case.find({ assignedOfficers: user._id }).select('_id');
+      const assignedCaseIds = assignedCases.map((c) => c._id);
+      
+      if (filter.caseId) {
+        // Ensure the filtered case is actually one they are assigned to
+        const isAssigned = assignedCaseIds.some(id => id.toString() === filter.caseId.toString());
+        if (!isAssigned) {
+           return []; // Return empty instead of error, or throw forbidden.
+        }
+      } else {
+        filter.caseId = { $in: assignedCaseIds };
+      }
+    }
+
+    // Ensure we only search documents that have embeddings
+    filter.embeddingVector = { $exists: true, $ne: [] };
+
+    // 3. Fetch Authorized Documents
+    // Select the necessary fields. We need embeddingVector to calculate similarity.
+    // We also select extractedText to provide context snippets.
+    const documents = await Document.find(filter)
+      .select('title documentType caseId s3Key fileName fileSize mimeType classification ocrConfidence status embeddingVector extractedText extractedFields')
+      .populate('caseId', 'title caseNumber');
+
+    // 4. Calculate Cosine Similarity & Rank
+    const results = [];
+
+    for (const doc of documents) {
+      const similarity = vectorService.calculateCosineSimilarity(queryEmbedding, doc.embeddingVector);
+      
+      // Threshold check (e.g., must be somewhat relevant)
+      if (similarity > 0.3) {
+        // Find a relevant snippet from extractedText
+        let snippet = '';
+        if (doc.extractedText) {
+            snippet = doc.extractedText.substring(0, 300) + '...';
+        }
+
+        results.push({
+          documentId: doc._id,
+          title: doc.title,
+          documentType: doc.documentType,
+          caseTitle: doc.caseId?.title,
+          caseNumber: doc.caseId?.caseNumber,
+          caseId: doc.caseId?._id,
+          similarityScore: similarity,
+          snippet: snippet,
+          status: doc.status,
+          classification: doc.classification?.predictedType,
+          ocrConfidence: doc.ocrConfidence
+        });
+      }
+    }
+
+    // Sort descending by similarity score
+    results.sort((a, b) => b.similarityScore - a.similarityScore);
+
+    // Limit to top 20
+    return results.slice(0, 20);
+  }
+}
+
+module.exports = new SearchService();
