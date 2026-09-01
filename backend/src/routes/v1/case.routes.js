@@ -7,6 +7,9 @@ const {
   assignOfficers,
   getCaseStatistics,
   getOfficersRoster,
+  getCaseIntelligence,
+  getCaseTimeline,
+  getCaseEntities,
 } = require('../../controllers/case.controller');
 const { requireAuth } = require('../../middleware/auth.middleware');
 const { requireRole } = require('../../middleware/rbac.middleware');
@@ -74,6 +77,30 @@ router.patch(
   requireRole(ROLES.OFFICER, ROLES.ADMIN),
   validateUpdateCase,
   asyncWrapper(updateCase)
+);
+
+// GET /api/v1/cases/:id/intelligence (Case timeline & cross-document entity linking)
+router.get(
+  '/:id/intelligence',
+  validateCaseIdParam,
+  requireRole(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN, ROLES.AUDITOR),
+  asyncWrapper(getCaseIntelligence)
+);
+
+// GET /api/v1/cases/:id/timeline (Chronological case timeline)
+router.get(
+  '/:id/timeline',
+  validateCaseIdParam,
+  requireRole(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN, ROLES.AUDITOR),
+  asyncWrapper(getCaseTimeline)
+);
+
+// GET /api/v1/cases/:id/entities (Cross-document linked entity graph)
+router.get(
+  '/:id/entities',
+  validateCaseIdParam,
+  requireRole(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN, ROLES.AUDITOR),
+  asyncWrapper(getCaseEntities)
 );
 
 // POST /api/v1/cases/:id/officers (Assign personnel to case)

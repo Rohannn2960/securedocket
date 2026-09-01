@@ -117,6 +117,38 @@ async function getOfficersRoster(req, res) {
   });
 }
 
+const intelligenceService = require('../services/intelligence.service');
+
+async function getCaseIntelligence(req, res) {
+  const { id } = req.params;
+  const intelligence = await intelligenceService.getCaseIntelligence(id, req.user);
+
+  return ApiResponse.success(res, {
+    message: 'Case intelligence dossier compiled successfully',
+    data: intelligence,
+  });
+}
+
+async function getCaseTimeline(req, res) {
+  const { id } = req.params;
+  const timeline = await intelligenceService.generateCaseTimeline(id, req.user);
+
+  return ApiResponse.success(res, {
+    message: 'Case chronological timeline generated successfully',
+    data: timeline,
+  });
+}
+
+async function getCaseEntities(req, res) {
+  const { id } = req.params;
+  const entities = await intelligenceService.extractCaseEntities(id, req.user);
+
+  return ApiResponse.success(res, {
+    message: 'Cross-document entity linking extracted successfully',
+    data: entities,
+  });
+}
+
 module.exports = {
   getCases,
   getCase,
@@ -125,4 +157,7 @@ module.exports = {
   assignOfficers,
   getCaseStatistics,
   getOfficersRoster,
+  getCaseIntelligence,
+  getCaseTimeline,
+  getCaseEntities,
 };
