@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Search as SearchIcon, FileText, Briefcase, File, Tag, AlertCircle, Eye, ExternalLink } from 'lucide-react';
-import searchService from '../../services/searchService';
-import caseService from '../../services/caseService';
-import { useAuth } from '../../contexts/AuthContext';
+import { searchService } from '../../services/searchService';
+import { caseService } from '../../services/caseService';
+import { documentService } from '../../services/documentService';
+import { useAuth } from '../../hooks/useAuth';
 import { Link } from 'react-router-dom';
-import DocumentDetailModal from '../../components/documents/DocumentDetailModal';
+import { DocumentDetailModal } from '../../components/documents/DocumentDetailModal';
 
-export default function Search() {
+export function Search() {
   const [query, setQuery] = useState('');
   const [caseIdFilter, setCaseIdFilter] = useState('');
   const [cases, setCases] = useState([]);
@@ -16,7 +17,9 @@ export default function Search() {
   const [error, setError] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
   
-  const [selectedDocument, setSelectedDocument] = useState(null);
+  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [isDocDetailOpen, setIsDocDetailOpen] = useState(false);
+  const [loadingDoc, setLoadingDoc] = useState(false);
   
   const { user } = useAuth();
 
@@ -55,6 +58,19 @@ export default function Search() {
     if (score >= 0.8) return 'bg-green-500';
     if (score >= 0.6) return 'bg-yellow-500';
     return 'bg-slate-500';
+  };
+
+  const handleOpenDoc = async (documentId) => {
+    try {
+      setLoadingDoc(true);
+      const res = await documentService.getDocumentById(documentId);
+      setSelectedDoc(res.data?.document || res.data);
+      setIsDocDetailOpen(true);
+    } catch (err) {
+      console.error('Failed to load document details', err);
+    } finally {
+      setLoadingDoc(false);
+    }
   };
 
   return (
@@ -149,7 +165,7 @@ export default function Search() {
               <div 
                 key={result.documentId} 
                 className="bg-slate-800 rounded-xl border border-slate-700/50 p-5 hover:border-slate-600 transition-colors cursor-pointer"
-                onClick={() => setSelectedDocument({ _id: result.documentId })}
+                onClick={() => handleOpenDoc(result.documentId)}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -201,7 +217,7 @@ export default function Search() {
                       className="mt-4 flex items-center text-sm text-blue-400 hover:text-blue-300 transition-colors"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setSelectedDocument({ _id: result.documentId });
+                        handleOpenDoc(result.documentId);
                       }}
                     >
                       <Eye className="w-4 h-4 mr-1" /> View Document
@@ -214,12 +230,18 @@ export default function Search() {
         </div>
       )}
 
-      {selectedDocument && (
-        <DocumentDetailModal 
-          documentId={selectedDocument._id}
-          onClose={() => setSelectedDocument(null)}
-        />
-      )}
+      {/* Document Detail Modal */}
+      <DocumentDetailModal 
+        isOpen={isDocDetailOpen}
+        onClose={() => {
+          setIsDocDetailOpen(false);
+          setSelectedDoc(null);
+        }}
+        document={selectedDoc}
+        onUpdated={(updated) => {
+          setSelectedDoc(updated);
+        }}
+      />
     </div>
   );
 }

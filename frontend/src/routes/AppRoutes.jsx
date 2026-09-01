@@ -11,7 +11,6 @@ import { CaseDetail } from '../pages/dashboard/CaseDetail';
 import { Documents } from '../pages/dashboard/Documents';
 import { VerificationQueue } from '../pages/dashboard/VerificationQueue';
 import { AuditLogs } from '../pages/dashboard/AuditLogs';
-import { SemanticSearch } from '../pages/dashboard/SemanticSearch';
 import { Search } from '../pages/dashboard/Search';
 import { Users } from '../pages/dashboard/Users';
 import { NotFound } from '../pages/common/NotFound';
