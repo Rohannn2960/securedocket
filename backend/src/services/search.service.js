@@ -31,15 +31,21 @@ class SearchService {
     }
 
     if (user.role === ROLES.OFFICER) {
-      // Officers can only search within cases assigned to them
-      const assignedCases = await Case.find({ assignedOfficers: user._id }).select('_id');
+      // Officers can only search within cases assigned to them (as lead or assigned officer)
+      const userId = user._id ? user._id.toString() : user.id;
+      const assignedCases = await Case.find({
+        $or: [{ leadOfficer: userId }, { assignedOfficers: userId }],
+      }).select('_id');
       const assignedCaseIds = assignedCases.map((c) => c._id);
-      
+
       if (filter.caseId) {
         // Ensure the filtered case is actually one they are assigned to
-        const isAssigned = assignedCaseIds.some(id => id.toString() === filter.caseId.toString());
+        const isAssigned = assignedCaseIds.some(
+          (id) => id.toString() === filter.caseId.toString()
+        );
         if (!isAssigned) {
-           return []; // Return empty instead of error, or throw forbidden.
+          logger.warn(`[Search Security] Unauthorized search attempt by Officer ${userId} on unassigned Case ${filter.caseId}`);
+          return []; // Strictly return empty results for unassigned case
         }
       } else {
         filter.caseId = { $in: assignedCaseIds };

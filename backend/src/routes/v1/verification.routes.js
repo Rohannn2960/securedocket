@@ -11,6 +11,12 @@ const {
 const { requireAuth } = require('../../middleware/auth.middleware');
 const { requireRole } = require('../../middleware/rbac.middleware');
 const { ROLES } = require('../../constants/roles');
+const {
+  validateDocumentIdParam,
+  validateFieldCorrection,
+  validateFieldApproval,
+  validateFlagDocument,
+} = require('../../middleware/validators/verification.validator');
 const asyncWrapper = require('../../utils/asyncWrapper');
 
 const router = express.Router();
@@ -28,6 +34,7 @@ router.get(
 // GET /api/v1/verification/:id (Get single document extraction dossier)
 router.get(
   '/:id',
+  validateDocumentIdParam,
   requireRole(ROLES.VERIFIER, ROLES.ADMIN, ROLES.AUDITOR, ROLES.OFFICER),
   asyncWrapper(getDocumentExtraction)
 );
@@ -35,6 +42,7 @@ router.get(
 // POST /api/v1/verification/:id/extract (Trigger / Re-run AI OCR pipeline)
 router.post(
   '/:id/extract',
+  validateDocumentIdParam,
   requireRole(ROLES.VERIFIER, ROLES.ADMIN),
   asyncWrapper(triggerExtraction)
 );
@@ -42,6 +50,7 @@ router.post(
 // PATCH /api/v1/verification/:id/fields (Correct extracted field - Verifier / Admin only)
 router.patch(
   '/:id/fields',
+  validateFieldCorrection,
   requireRole(ROLES.VERIFIER, ROLES.ADMIN),
   asyncWrapper(updateFieldCorrection)
 );
@@ -49,6 +58,7 @@ router.patch(
 // POST /api/v1/verification/:id/fields/approve (Approve field - Verifier / Admin only)
 router.post(
   '/:id/fields/approve',
+  validateFieldApproval,
   requireRole(ROLES.VERIFIER, ROLES.ADMIN),
   asyncWrapper(approveField)
 );
@@ -56,6 +66,7 @@ router.post(
 // POST /api/v1/verification/:id/verify (Finalize verification and certify document)
 router.post(
   '/:id/verify',
+  validateDocumentIdParam,
   requireRole(ROLES.VERIFIER, ROLES.ADMIN),
   asyncWrapper(verifyDocument)
 );
@@ -63,6 +74,7 @@ router.post(
 // POST /api/v1/verification/:id/flag (Flag document for discrepancy / tamper)
 router.post(
   '/:id/flag',
+  validateFlagDocument,
   requireRole(ROLES.VERIFIER, ROLES.ADMIN),
   asyncWrapper(flagDocument)
 );

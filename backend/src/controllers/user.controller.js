@@ -124,6 +124,19 @@ async function updateUserRole(req, res) {
     throw ApiError.notFound('User not found');
   }
 
+  // Prevent demoting the last active administrator (System Lockout Defense)
+  const isSelf = targetUser._id.toString() === (req.user.id || req.user._id).toString();
+  if (targetUser.role === 'admin' && role !== 'admin') {
+    const otherActiveAdmins = await User.countDocuments({
+      role: 'admin',
+      isActive: true,
+      _id: { $ne: targetUser._id },
+    });
+    if (otherActiveAdmins === 0) {
+      throw ApiError.badRequest('Security Guard: Cannot demote the sole remaining active system administrator.');
+    }
+  }
+
   const oldRole = targetUser.role;
   targetUser.role = role;
   await targetUser.save();
@@ -159,6 +172,18 @@ async function updateUserStatus(req, res) {
 
   if (!targetUser) {
     throw ApiError.notFound('User not found');
+  }
+
+  // Prevent deactivating the last active administrator
+  if (!isActive && targetUser.role === 'admin') {
+    const otherActiveAdmins = await User.countDocuments({
+      role: 'admin',
+      isActive: true,
+      _id: { $ne: targetUser._id },
+    });
+    if (otherActiveAdmins === 0) {
+      throw ApiError.badRequest('Security Guard: Cannot suspend the sole remaining active system administrator.');
+    }
   }
 
   targetUser.isActive = isActive;

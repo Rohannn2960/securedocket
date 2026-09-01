@@ -266,13 +266,34 @@ Strictly return valid JSON only.`;
   _extractFieldsByRule(text, documentType, fileName) {
     const fields = [];
 
-    // Helper regex extractors
+    // Helper regex extractors (returns match and exact matched position if found)
     const matchFirst = (regexes) => {
       for (const rx of regexes) {
         const m = text.match(rx);
-        if (m && m[1]) return m[1].trim();
+        if (m && m[1] && m[1].trim().length > 0) {
+          return m[1].trim();
+        }
       }
       return null;
+    };
+
+    const addField = (field, val, confidenceIfFound, sourceRef) => {
+      if (val !== null && val !== undefined && val.trim() !== '') {
+        fields.push({
+          field,
+          value: val,
+          confidence: confidenceIfFound,
+          sourceReference: sourceRef,
+        });
+      } else {
+        // Preserves field in schema as pending/unextracted without inventing false data
+        fields.push({
+          field,
+          value: null,
+          confidence: 0.0,
+          sourceReference: 'Unidentified in source text (Requires Human Review)',
+        });
+      }
     };
 
     switch (documentType) {
@@ -281,45 +302,43 @@ Strictly return valid JSON only.`;
           /(?:FIR|Case)\s+(?:No\.?|Number)?:?\s*([A-Z0-9/\-_]+)/i,
           /(?:CR|FIR)[/-]\d{4}[/-][A-Z0-9-]+/i,
           /(?:FIR\s*No\.?):?\s*([A-Z0-9/\-_]+)/i,
-        ]) || 'CR/2026/0891-BLR';
+        ]);
 
         const ps = matchFirst([
           /(?:Police Station|PS|Station):?\s*([^\n,]+)/i,
           /(?:Jurisdiction):?\s*([^\n,]+)/i,
-        ]) || 'Central Cyber Crime Police Station';
+        ]);
 
         const incDate = matchFirst([
           /(?:Date of Incident|Incident Date|Date & Time|Timestamp):?\s*([^\n,]+)/i,
-        ]) || '2026-03-14 02:30 IST';
+        ]);
 
         const loc = matchFirst([
           /(?:Place of Occurrence|Incident Location|Location):?\s*([^\n,]+)/i,
-        ]) || 'Bengaluru City North Corridor';
+        ]);
 
         const comp = matchFirst([
           /(?:Complainant|Informant|Lodged by):?\s*([^\n,]+)/i,
-        ]) || 'State Bank Fraud Monitoring Officer';
+        ]);
 
         const accused = matchFirst([
           /(?:Accused|Suspect|Name of Accused):?\s*([^\n,]+)/i,
-        ]) || 'Devendra Verma & Unknown Associates';
+        ]);
 
         const sectionsRaw = matchFirst([
           /(?:Acts?\s*&\s*Sections?|Offences?|Penal Sections?):?\s*([^\n]+)/i,
           /(?:Sections?|Acts?|U\/S):?\s*([^\n]+)/i,
           /(?:Under Section):?\s*([^\n]+)/i,
-        ]) || 'IPC Sec 420, 468, 471 / IT Act Sec 66C, 66D';
-        const sections = sectionsRaw.replace(/^(?:Acts?\s*&\s*Sections?:?|Sections?:?|Offences?:?)/i, '').trim();
+        ]);
+        const sections = sectionsRaw ? sectionsRaw.replace(/^(?:Acts?\s*&\s*Sections?:?|Sections?:?|Offences?:?)/i, '').trim() : null;
 
-        fields.push(
-          { field: 'firNumber', value: firNum, confidence: 0.95, sourceReference: 'FIR Header' },
-          { field: 'policeStation', value: ps, confidence: 0.92, sourceReference: 'Jurisdiction Block' },
-          { field: 'incidentDate', value: incDate, confidence: 0.88, sourceReference: 'Occurrence Section' },
-          { field: 'incidentLocation', value: loc, confidence: 0.86, sourceReference: 'Location Clause' },
-          { field: 'complainant', value: comp, confidence: 0.91, sourceReference: 'Complainant Block' },
-          { field: 'accused', value: accused, confidence: 0.89, sourceReference: 'Accused List' },
-          { field: 'sections', value: sections, confidence: 0.94, sourceReference: 'Statutory Sections' }
-        );
+        addField('firNumber', firNum, 0.95, 'FIR Header');
+        addField('policeStation', ps, 0.92, 'Jurisdiction Block');
+        addField('incidentDate', incDate, 0.88, 'Occurrence Section');
+        addField('incidentLocation', loc, 0.86, 'Location Clause');
+        addField('complainant', comp, 0.91, 'Complainant Block');
+        addField('accused', accused, 0.89, 'Accused List');
+        addField('sections', sections, 0.94, 'Statutory Sections');
         break;
       }
 
@@ -327,88 +346,82 @@ Strictly return valid JSON only.`;
         const witness = matchFirst([
           /(?:Statement of|Witness Name|Deponent|Deposition of):?\s*([^\n,]+)/i,
           /(?:Name of Witness):?\s*([^\n,]+)/i,
-        ]) || 'V. Ramanathan (Senior Verification Officer)';
+        ]);
 
         const stmtDate = matchFirst([
           /(?:Recorded on|Statement Date|Date of Recording):?\s*([^\n,]+)/i,
-        ]) || new Date().toISOString().split('T')[0];
+        ]);
 
         const refs = matchFirst([
           /(?:In reference to|Concerning Case|Matter of):?\s*([^\n,]+)/i,
-        ]) || 'Unauthorized KYC Server Injection Incident';
+        ]);
 
         const loc = matchFirst([
           /(?:Recorded at|Station|Location):?\s*([^\n,]+)/i,
-        ]) || 'Cyber Crime Police Station, Hyderabad';
+        ]);
 
-        fields.push(
-          { field: 'witnessName', value: witness, confidence: 0.93, sourceReference: 'Title / Deponent' },
-          { field: 'statementDate', value: stmtDate, confidence: 0.90, sourceReference: 'Date of Statement' },
-          { field: 'incidentReferences', value: refs, confidence: 0.87, sourceReference: 'Reference Text' },
-          { field: 'locations', value: loc, confidence: 0.88, sourceReference: 'Recording Location' }
-        );
+        addField('witnessName', witness, 0.93, 'Title / Deponent');
+        addField('statementDate', stmtDate, 0.90, 'Date of Statement');
+        addField('incidentReferences', refs, 0.87, 'Reference Text');
+        addField('locations', loc, 0.88, 'Recording Location');
         break;
       }
 
       case DOCUMENT_TYPES.CHARGESHEET: {
         const accused = matchFirst([
           /(?:Name of Accused|Accused Persons|Chargesheeted):?\s*([^\n,]+)/i,
-        ]) || 'Rajesh Kumar @ Rakesh';
+        ]);
 
         const sections = matchFirst([
           /(?:Offences Charged|Sections|U\/S):?\s*([^\n,]+)/i,
-        ]) || 'IPC 420, 120B, 467';
+        ]);
 
         const fDate = matchFirst([
           /(?:Date of Filing|Filing Date|Submission Date):?\s*([^\n,]+)/i,
-        ]) || '2026-05-18';
+        ]);
 
         const io = matchFirst([
           /(?:Investigating Officer|IO|Officer in Charge):?\s*([^\n,]+)/i,
-        ]) || 'Inspector Vikram Singh (Badge: CCB-9842)';
+        ]);
 
         const refEvidence = matchFirst([
           /(?:List of Documents|Referenced Evidence|Annexures):?\s*([^\n]+)/i,
-        ]) || 'Annexure A (Bank Statements), Annexure B (CFSL Report)';
+        ]);
 
-        fields.push(
-          { field: 'accused', value: accused, confidence: 0.94, sourceReference: 'Accused Column' },
-          { field: 'sections', value: sections, confidence: 0.96, sourceReference: 'Charge Formulation' },
-          { field: 'filingDate', value: fDate, confidence: 0.91, sourceReference: 'Court Presentation' },
-          { field: 'investigatingOfficer', value: io, confidence: 0.93, sourceReference: 'IO Signature Block' },
-          { field: 'referencedEvidence', value: refEvidence, confidence: 0.89, sourceReference: 'Document Schedule' }
-        );
+        addField('accused', accused, 0.94, 'Accused Column');
+        addField('sections', sections, 0.96, 'Charge Formulation');
+        addField('filingDate', fDate, 0.91, 'Court Presentation');
+        addField('investigatingOfficer', io, 0.93, 'IO Signature Block');
+        addField('referencedEvidence', refEvidence, 0.89, 'Document Schedule');
         break;
       }
 
       case DOCUMENT_TYPES.FORENSIC_REPORT: {
         const repNum = matchFirst([
           /(?:Report No\.?|CFSL No\.?|Reference No\.?):?\s*([^\n,]+)/i,
-        ]) || 'CFSL/BLR/2026/CHEM-491';
+        ]);
 
         const examDate = matchFirst([
           /(?:Date of Examination|Examination Date|Analysis Date):?\s*([^\n,]+)/i,
-        ]) || '2026-04-12';
+        ]);
 
         const lab = matchFirst([
           /(?:Laboratory|Forensic Lab|Institution):?\s*([^\n,]+)/i,
-        ]) || 'Central Forensic Science Laboratory, Directorate of Forensic Science';
+        ]);
 
         const findings = matchFirst([
           /(?:Opinion|Findings|Conclusion|Result of Examination):?\s*([^\n]+)/i,
-        ]) || 'The specimen matches firearm ballistic rifling marks and chemical propellant residue standards.';
+        ]);
 
         const relEvidence = matchFirst([
           /(?:Specimen Received|Related Evidence|Exhibit No\.?):?\s*([^\n,]+)/i,
-        ]) || 'Exhibit A-1 (Seized Weapon Cache)';
+        ]);
 
-        fields.push(
-          { field: 'reportNumber', value: repNum, confidence: 0.97, sourceReference: 'Report Header' },
-          { field: 'examinationDate', value: examDate, confidence: 0.92, sourceReference: 'Exam Date Block' },
-          { field: 'laboratory', value: lab, confidence: 0.95, sourceReference: 'CFSL Seal' },
-          { field: 'findings', value: findings, confidence: 0.90, sourceReference: 'Expert Opinion Section' },
-          { field: 'relatedEvidence', value: relEvidence, confidence: 0.88, sourceReference: 'Exhibit Description' }
-        );
+        addField('reportNumber', repNum, 0.97, 'Report Header');
+        addField('examinationDate', examDate, 0.92, 'Exam Date Block');
+        addField('laboratory', lab, 0.95, 'CFSL Seal');
+        addField('findings', findings, 0.90, 'Expert Opinion Section');
+        addField('relatedEvidence', relEvidence, 0.88, 'Exhibit Description');
         break;
       }
 
@@ -416,31 +429,29 @@ Strictly return valid JSON only.`;
       default: {
         const evId = matchFirst([
           /(?:Evidence (?:ID|Identifier|No\.?)|Exhibit):?\s*([^\n,]+)/i,
-        ]) || `EVD-${Date.now().toString().slice(-6)}`;
+        ]);
 
         const colDate = matchFirst([
           /(?:Date of Recovery|Collection Date|Seizure Date):?\s*([^\n,]+)/i,
-        ]) || new Date().toISOString().split('T')[0];
+        ]);
 
         const loc = matchFirst([
           /(?:Seized From|Location of Seizure|Recovery Spot):?\s*([^\n,]+)/i,
-        ]) || 'Premises No. 42, Cyber Hub Sector 3';
+        ]);
 
         const desc = matchFirst([
           /(?:Description of Item|Seizure Description|Evidence Details):?\s*([^\n]+)/i,
-        ]) || 'Encrypted flash memory drive containing fraudulent banking ledger tables.';
+        ]);
 
         const custodian = matchFirst([
           /(?:Custodian|Malkhana Incharge|Officer Seizing):?\s*([^\n,]+)/i,
-        ]) || 'Sub-Inspector Ananya Rao (CCB-7719)';
+        ]);
 
-        fields.push(
-          { field: 'evidenceIdentifier', value: evId, confidence: 0.91, sourceReference: 'Evidence Tag' },
-          { field: 'collectionDate', value: colDate, confidence: 0.89, sourceReference: 'Seizure Clause' },
-          { field: 'location', value: loc, confidence: 0.87, sourceReference: 'Spot Memo' },
-          { field: 'description', value: desc, confidence: 0.92, sourceReference: 'Item Manifest' },
-          { field: 'custodian', value: custodian, confidence: 0.90, sourceReference: 'Malkhana Log' }
-        );
+        addField('evidenceIdentifier', evId, 0.91, 'Evidence Tag');
+        addField('collectionDate', colDate, 0.89, 'Seizure Clause');
+        addField('location', loc, 0.87, 'Spot Memo');
+        addField('description', desc, 0.92, 'Item Manifest');
+        addField('custodian', custodian, 0.90, 'Malkhana Log');
         break;
       }
     }
