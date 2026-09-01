@@ -1,0 +1,23 @@
+{
+  "name": "sih-26190-secure-dms",
+  "version": "1.0.0",
+  "description": "Secure Digital Document Management System for Legal and Investigation Documents (SIH 26190)",
+  "private": true,
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "start:backend": "npm --prefix backend start",
+    "install:all": "npm install && npm --prefix backend install && npm --prefix frontend install"
+  },
+  "keywords": [
+    "law-enforcement",
+    "digital-dms",
+    "document-security",
+    "sih26190",
+    "audit-trail",
+    "ai-ocr"
+  ],
+  "author": "Lead Architect",
+  "license": "UNLICENSED"
+}
