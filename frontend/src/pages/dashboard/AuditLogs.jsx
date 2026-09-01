@@ -136,31 +136,58 @@ export function AuditLogs() {
 
       {/* Chained Blocks Timeline */}
       <div className="space-y-4">
-        {auditLogs.map((log, index) => (
-          <div
-            key={log._id}
-            className="glass-panel p-5 rounded-2xl border border-slate-800 space-y-4 hover:border-indigo-500/40 transition-all relative overflow-hidden"
-          >
-            {/* Block Header */}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
-              <div className="flex items-center gap-3">
-                <Badge variant="indigo" size="sm">
-                  {log.action}
-                </Badge>
-                <span className="text-xs font-semibold text-slate-200">
-                  {log.documentId ? (log.documentId.title || 'Document') : (log.caseId?.title || 'System Event')}
-                </span>
+        {auditLogs.map((log, index) => {
+          const isBrokenBlock =
+            chainStatus &&
+            !chainStatus.valid &&
+            (chainStatus.firstBrokenEntry === log._id || chainStatus.brokenIndex === index);
+
+          return (
+            <div
+              key={log._id}
+              className={`p-5 rounded-2xl border transition-all relative overflow-hidden space-y-4 ${
+                isBrokenBlock
+                  ? 'bg-rose-950/40 border-rose-500/80 shadow-glow-rose ring-1 ring-rose-500/50'
+                  : 'glass-panel border-slate-800 hover:border-cyan-500/40'
+              }`}
+            >
+              {isBrokenBlock && (
+                <div className="p-2.5 rounded-lg bg-rose-900/60 border border-rose-500/60 flex items-center justify-between text-xs font-mono text-rose-200">
+                  <span className="flex items-center gap-1.5 font-bold">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 animate-pulse" />
+                    🚨 CRYPTOGRAPHIC DISCREPANCY DETECTED AT THIS BLOCK (Index #{index + 1})
+                  </span>
+                  <span className="text-[11px] bg-rose-950 px-2 py-0.5 rounded border border-rose-700/50">
+                    Violation: {chainStatus.reason}
+                  </span>
+                </div>
+              )}
+
+              {/* Block Header */}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+                <div className="flex items-center gap-3">
+                  <Badge variant={isBrokenBlock ? 'tampered' : 'indigo'} size="sm">
+                    {log.action}
+                  </Badge>
+                  <span className="text-xs font-semibold text-slate-200">
+                    {log.documentId ? (log.documentId.title || 'Document') : (log.caseId?.title || 'System Event')}
+                  </span>
+                  {log.caseId?.caseNumber && (
+                    <span className="text-xs font-mono text-cyan-400 font-bold">
+                      [{log.caseId.caseNumber}]
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-4 text-xs font-mono text-slate-400">
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    {formatDate(log.timestamp)}
+                  </span>
+                  <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                    IP: {log.ipAddress || 'unknown'}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-4 text-xs font-mono text-slate-400">
-                <span className="flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5" />
-                  {formatDate(log.timestamp)}
-                </span>
-                <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                  IP: {log.ipAddress || 'unknown'}
-                </span>
-              </div>
-            </div>
 
             {/* Actor & Action Details */}
             <div className="text-xs text-slate-300 flex items-center gap-2">
@@ -199,7 +226,8 @@ export function AuditLogs() {
               </div>
             </div>
           </div>
-        ))}
+        );
+      })}
       </div>
     </div>
   );
