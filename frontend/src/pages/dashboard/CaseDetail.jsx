@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   History,
   Lock,
+  UploadCloud,
 } from 'lucide-react';
 import { Card } from '../../components/common/Card';
 import { Badge } from '../../components/common/Badge';
@@ -23,6 +24,8 @@ import { Alert } from '../../components/common/Alert';
 import { Spinner } from '../../components/common/Spinner';
 import { useAuth } from '../../hooks/useAuth';
 import { caseService } from '../../services/caseService';
+import { DocumentUploadModal } from '../../components/documents/DocumentUploadModal';
+import { DocumentDetailModal } from '../../components/documents/DocumentDetailModal';
 import { formatDate, truncateHash } from '../../utils/formatters';
 
 const STATUS_OPTIONS = [
@@ -45,12 +48,16 @@ export function CaseDetail() {
   // Status update
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
-  // Assign Officer Modal
+  // Modals
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [availableOfficers, setAvailableOfficers] = useState([]);
   const [selectedOfficerId, setSelectedOfficerId] = useState('');
   const [assignLoading, setAssignLoading] = useState(false);
   const [assignError, setAssignError] = useState(null);
+
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [isDocDetailOpen, setIsDocDetailOpen] = useState(false);
 
   const fetchCaseDetails = async () => {
     setLoading(true);
@@ -113,6 +120,19 @@ export function CaseDetail() {
     }
   };
 
+  const handleOpenDocDetail = (doc) => {
+    // Enrich with current case info
+    setSelectedDoc({
+      ...doc,
+      caseId: {
+        _id: caseData._id,
+        caseNumber: caseData.caseNumber,
+        title: caseData.title,
+      },
+    });
+    setIsDocDetailOpen(true);
+  };
+
   if (loading) {
     return (
       <div className="py-24 text-center">
@@ -134,7 +154,7 @@ export function CaseDetail() {
 
   const canEdit = user?.role === 'officer' || user?.role === 'admin';
 
-  // Helper functions for bulletproof rendering of officers
+  // Helper functions for safe rendering
   const getOfficerId = (officer) => {
     if (!officer) return '';
     if (typeof officer === 'object') return officer._id?.toString() || '';
@@ -264,28 +284,41 @@ export function CaseDetail() {
             subtitle="Case files secured with SHA-256 client/server cryptographic hashing"
             action={
               canEdit ? (
-                <Link to="/dashboard/documents">
-                  <Button variant="secondary" size="sm" icon={FileText} className="text-xs">
-                    Upload Document
-                  </Button>
-                </Link>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={UploadCloud}
+                  className="text-xs"
+                  onClick={() => setIsUploadModalOpen(true)}
+                >
+                  Upload Document
+                </Button>
               ) : null
             }
           >
             {caseData.documents?.length === 0 ? (
-              <div className="py-8 text-center text-xs text-slate-400 space-y-1">
+              <div className="py-8 text-center text-xs text-slate-400 space-y-2">
                 <FileText className="w-8 h-8 text-slate-600 mx-auto" />
                 <div>No documents attached to this case dossier yet.</div>
-                <div className="text-[11px] text-slate-500 font-mono">
-                  Phase 2 S3 ingestion ready.
-                </div>
+                {canEdit && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={UploadCloud}
+                    className="text-xs text-cyan-400"
+                    onClick={() => setIsUploadModalOpen(true)}
+                  >
+                    Upload Evidence File Now
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
                 {caseData.documents?.map((doc) => (
                   <div
                     key={doc._id}
-                    className="p-3.5 rounded-xl bg-defense-900/60 border border-slate-800/80 hover:border-slate-700 transition-all flex items-center justify-between"
+                    onClick={() => handleOpenDocDetail(doc)}
+                    className="p-3.5 rounded-xl bg-defense-900/60 border border-slate-800/80 hover:border-cyan-500/50 hover:bg-defense-900 transition-all cursor-pointer flex items-center justify-between"
                   >
                     <div className="space-y-1 max-w-[70%]">
                       <div className="text-xs font-semibold text-slate-200 truncate">
@@ -295,9 +328,11 @@ export function CaseDetail() {
                         SHA-256: {truncateHash(doc.sha256Hash || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4', 8, 8)}
                       </div>
                     </div>
-                    <Badge variant={doc.isTampered ? 'tampered' : 'verified'} size="xs">
-                      {doc.isTampered ? 'TAMPERED' : 'VALID'}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={doc.isTampered ? 'tampered' : 'verified'} size="xs">
+                        {doc.status?.replace('_', ' ').toUpperCase() || 'VALID'}
+                      </Badge>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -417,6 +452,23 @@ export function CaseDetail() {
           </form>
         )}
       </Modal>
+
+      {/* Upload Document Modal */}
+      <DocumentUploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        initialCaseId={caseData._id}
+        onUploadSuccess={() => {
+          fetchCaseDetails();
+        }}
+      />
+
+      {/* Document Detail Modal */}
+      <DocumentDetailModal
+        isOpen={isDocDetailOpen}
+        onClose={() => setIsDocDetailOpen(false)}
+        document={selectedDoc}
+      />
     </div>
   );
 }

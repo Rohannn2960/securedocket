@@ -1,5 +1,5 @@
 /**
- * Supported Legal & Investigation Document Types
+ * Supported Legal & Investigation Document Types (Categories)
  */
 const DOCUMENT_TYPES = Object.freeze({
   FIR: 'FIR',                         // First Information Report
@@ -12,11 +12,12 @@ const DOCUMENT_TYPES = Object.freeze({
 const ALL_DOCUMENT_TYPES = Object.freeze(Object.values(DOCUMENT_TYPES));
 
 const DOCUMENT_STATUS = Object.freeze({
-  PENDING_OCR: 'pending_ocr',
-  OCR_COMPLETED: 'ocr_completed',
-  VERIFIED: 'verified',
-  FLAGGED_TAMPERED: 'flagged_tampered',
-  REJECTED: 'rejected',
+  PENDING_REVIEW: 'pending_review',   // Initial ingestion status
+  PENDING_OCR: 'pending_ocr',         // Awaiting OCR pipeline
+  OCR_COMPLETED: 'ocr_completed',     // OCR extracted
+  VERIFIED: 'verified',               // Forensic / Verifier clearance
+  FLAGGED_TAMPERED: 'flagged_tampered', // Integrity hash mismatch / tampering detected
+  REJECTED: 'rejected',               // Rejected evidence
 });
 
 const ALL_DOCUMENT_STATUSES = Object.freeze(Object.values(DOCUMENT_STATUS));

@@ -35,6 +35,7 @@ const documentVersionSchema = new mongoose.Schema(
     changeNotes: {
       type: String,
       maxlength: 500,
+      default: 'Initial secure ingestion',
     },
   },
   { _id: false }
@@ -58,9 +59,9 @@ const documentSchema = new mongoose.Schema(
       type: String,
       enum: {
         values: ALL_DOCUMENT_TYPES,
-        message: 'Document type {VALUE} is not recognized',
+        message: 'Document category {VALUE} is not recognized',
       },
-      required: [true, 'Document type is required'],
+      required: [true, 'Document category is required'],
       index: true,
     },
     s3Key: {
@@ -74,6 +75,11 @@ const documentSchema = new mongoose.Schema(
       required: true,
     },
     fileName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    originalName: {
       type: String,
       required: true,
       trim: true,
@@ -98,6 +104,21 @@ const documentSchema = new mongoose.Schema(
       match: [/^[a-f0-9]{64}$/i, 'Must be a valid 64-character SHA-256 hexadecimal hash'],
       index: true,
     },
+    version: {
+      type: Number,
+      default: 1,
+      min: 1,
+    },
+    status: {
+      type: String,
+      enum: ALL_DOCUMENT_STATUSES,
+      default: DOCUMENT_STATUS.PENDING_REVIEW,
+      index: true,
+    },
+    isTampered: {
+      type: Boolean,
+      default: false,
+    },
     ocrConfidence: {
       type: Number,
       min: 0,
@@ -114,14 +135,8 @@ const documentSchema = new mongoose.Schema(
     },
     embeddingVector: {
       type: [Number],
-      select: false, // Omit vector from standard list views
-      index: false,  // In Atlas, Vector Index is managed via Atlas Search
-    },
-    status: {
-      type: String,
-      enum: ALL_DOCUMENT_STATUSES,
-      default: DOCUMENT_STATUS.PENDING_OCR,
-      index: true,
+      select: false,
+      index: false,
     },
     verifiedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -140,6 +155,10 @@ const documentSchema = new mongoose.Schema(
       },
     ],
     versions: [documentVersionSchema],
+    metadata: {
+      description: { type: String, maxlength: 1000 },
+      tags: [{ type: String, trim: true }],
+    },
   },
   {
     timestamps: true,

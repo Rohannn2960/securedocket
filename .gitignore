@@ -32,6 +32,9 @@ lerna-debug.log*
 
 # Uploads and temporary files
 uploads/
+storage/
+backend/storage/
+.vault/
 tmp/
 temp/
 *.tmp

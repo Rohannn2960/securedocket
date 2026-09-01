@@ -1,39 +1,61 @@
 const express = require('express');
-const { getDocuments, getDocument, getDocumentDownloadUrl } = require('../../controllers/document.controller');
+const {
+  uploadDocument,
+  getDocuments,
+  getDocument,
+  getDocumentViewUrl,
+  getDocumentDownloadUrl,
+  streamVaultDocument,
+} = require('../../controllers/document.controller');
 const { requireAuth } = require('../../middleware/auth.middleware');
 const { requireRole } = require('../../middleware/rbac.middleware');
+const { handleSingleUpload } = require('../../middleware/upload.middleware');
 const { ROLES } = require('../../constants/roles');
 const asyncWrapper = require('../../utils/asyncWrapper');
 
 const router = express.Router();
 
+// GET /api/v1/documents/vault-stream/:id (Time-limited Cryptographically Signed Presigned Stream)
+// Publicly accessible via presigned signature and expiry parameters
+router.get('/vault-stream/:id', asyncWrapper(streamVaultDocument));
+
+// Require authentication across standard API endpoints
 router.use(requireAuth);
 
-// GET /api/v1/documents (Viewable by all authorized roles)
-router.get('/', asyncWrapper(getDocuments));
+// GET /api/v1/documents (List documents scoped by clearance)
+router.get(
+  '/',
+  requireRole(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN, ROLES.AUDITOR),
+  asyncWrapper(getDocuments)
+);
 
-// GET /api/v1/documents/:id
-router.get('/:id', asyncWrapper(getDocument));
-
-// GET /api/v1/documents/:id/download-url
-router.get('/:id/download-url', asyncWrapper(getDocumentDownloadUrl));
-
-// POST /api/v1/documents (Upload permitted only to OFFICER and ADMIN)
+// POST /api/v1/documents (Secure Ingestion: OFFICER or ADMIN only)
 router.post(
   '/',
   requireRole(ROLES.OFFICER, ROLES.ADMIN),
-  asyncWrapper((req, res) => {
-    res.status(501).json({ success: false, message: 'Document upload pipeline is scheduled for Phase 2.' });
-  })
+  handleSingleUpload('file'),
+  asyncWrapper(uploadDocument)
 );
 
-// POST /api/v1/documents/:id/verify (Verification permitted only to VERIFIER and ADMIN - Auditor/Officer cannot modify)
-router.post(
-  '/:id/verify',
-  requireRole(ROLES.VERIFIER, ROLES.ADMIN),
-  asyncWrapper((req, res) => {
-    res.status(501).json({ success: false, message: 'Document verification pipeline is scheduled for Phase 2.' });
-  })
+// GET /api/v1/documents/:id/view (Generate 5-Minute Presigned View URL)
+router.get(
+  '/:id/view',
+  requireRole(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN, ROLES.AUDITOR),
+  asyncWrapper(getDocumentViewUrl)
+);
+
+// GET /api/v1/documents/:id/download-url (Generate 5-Minute Presigned Download URL)
+router.get(
+  '/:id/download-url',
+  requireRole(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN, ROLES.AUDITOR),
+  asyncWrapper(getDocumentDownloadUrl)
+);
+
+// GET /api/v1/documents/:id (Get document metadata dossier)
+router.get(
+  '/:id',
+  requireRole(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN, ROLES.AUDITOR),
+  asyncWrapper(getDocument)
 );
 
 module.exports = router;
