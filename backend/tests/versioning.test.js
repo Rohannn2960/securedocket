@@ -1,21 +1,16 @@
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { connectToTestDb, closeTestDb } = require('./testDb');
 const documentService = require('../src/services/document.service');
 const { Case, Document, User, AuditLog } = require('../src/models');
 const { ROLES } = require('../src/constants/roles');
 const { calculateSha256 } = require('../src/utils/crypto');
 
-let mongoServer;
-
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  const uri = mongoServer.getUri();
-  await mongoose.connect(uri);
+  await connectToTestDb();
 });
 
 afterAll(async () => {
-  await mongoose.disconnect();
-  await mongoServer.stop();
+  await closeTestDb();
 });
 
 afterEach(async () => {
@@ -128,7 +123,7 @@ describe('Phase 10: Document Versioning and Edit Integrity', () => {
       },
       changeDescription: 'Appended supplemental witness statements',
       title: 'FIR Supplemented (v2)',
-      user: officerUser,
+      user: verifierUser,
     });
 
     expect(updatedDoc.version).toBe(2);
@@ -146,7 +141,7 @@ describe('Phase 10: Document Versioning and Edit Integrity', () => {
     expect(v2Record).toBeDefined();
     expect(v2Record.sha256Hash).toBe(v2Hash);
     expect(v2Record.changeDescription).toBe('Appended supplemental witness statements');
-    expect(v2Record.editedBy.toString()).toBe(officerUser._id.toString());
+    expect(v2Record.editedBy.toString()).toBe(verifierUser._id.toString());
   });
 
   test('2. Should support multiple sequential versions (v1 -> v2 -> v3) preserving full lineage', async () => {
@@ -161,7 +156,7 @@ describe('Phase 10: Document Versioning and Edit Integrity', () => {
         size: v2Buffer.length,
       },
       changeDescription: 'Second revision',
-      user: officerUser,
+      user: verifierUser,
     });
 
     // v3
@@ -184,7 +179,7 @@ describe('Phase 10: Document Versioning and Edit Integrity', () => {
     expect(v3Doc.sha256Hash).toBe(v3Hash);
     expect(v3Doc.versions.length).toBe(3);
 
-    const versionsHistory = await documentService.getDocumentVersions(testDocument._id, officerUser);
+    const versionsHistory = await documentService.getDocumentVersions(testDocument._id, verifierUser);
     expect(versionsHistory.totalVersions).toBe(3);
     expect(versionsHistory.versions[0].versionNumber).toBe(1);
     expect(versionsHistory.versions[1].versionNumber).toBe(2);
@@ -204,7 +199,7 @@ describe('Phase 10: Document Versioning and Edit Integrity', () => {
         size: v2Buffer.length,
       },
       changeDescription: 'Audited version revision',
-      user: officerUser,
+      user: verifierUser,
     });
 
     const auditLogs = await AuditLog.find({
@@ -216,7 +211,7 @@ describe('Phase 10: Document Versioning and Edit Integrity', () => {
     expect(auditLogs[0].details.newVersion).toBe(2);
     expect(auditLogs[0].details.previousVersion).toBe(1);
     expect(auditLogs[0].details.newHash).toBe(v2Hash);
-    expect(auditLogs[0].userId.toString()).toBe(officerUser._id.toString());
+    expect(auditLogs[0].userId.toString()).toBe(verifierUser._id.toString());
   });
 
   test('4. Should reject modification attempts by Auditors (Read-Only RBAC)', async () => {
@@ -233,7 +228,7 @@ describe('Phase 10: Document Versioning and Edit Integrity', () => {
         changeDescription: 'Unauthorized edit',
         user: auditorUser,
       })
-    ).rejects.toThrow(/Access forbidden: Auditors are granted read-only oversight clearance/i);
+    ).rejects.toThrow(/Access forbidden: Role 'auditor' is not authorized to create a document revision. Only Verifiers and Admins may do so\./i);
   });
 
   test('5. Should reject modification attempts by Officers not assigned to the case', async () => {
@@ -250,7 +245,7 @@ describe('Phase 10: Document Versioning and Edit Integrity', () => {
         changeDescription: 'Unassigned edit attempt',
         user: unauthorizedOfficer,
       })
-    ).rejects.toThrow(/Access forbidden: You cannot modify documents belonging to an unassigned case dossier/i);
+    ).rejects.toThrow(/Access forbidden: Role 'officer' is not authorized to create a document revision. Only Verifiers and Admins may do so\./i);
   });
 
   test('6. Should allow version retrieval and accurate comparison metadata diffs', async () => {
@@ -264,15 +259,15 @@ describe('Phase 10: Document Versioning and Edit Integrity', () => {
         size: v2Buffer.length,
       },
       changeDescription: 'Comparison test revision',
-      user: officerUser,
+      user: verifierUser,
     });
 
     // Test specific version retrieval
-    const v1Details = await documentService.getDocumentVersion(testDocument._id, 1, officerUser);
+    const v1Details = await documentService.getDocumentVersion(testDocument._id, 1, verifierUser);
     expect(v1Details.versionNumber).toBe(1);
     expect(v1Details.isCurrent).toBe(false);
 
-    const v2Details = await documentService.getDocumentVersion(testDocument._id, 2, officerUser);
+    const v2Details = await documentService.getDocumentVersion(testDocument._id, 2, verifierUser);
     expect(v2Details.versionNumber).toBe(2);
     expect(v2Details.isCurrent).toBe(true);
 
@@ -281,7 +276,7 @@ describe('Phase 10: Document Versioning and Edit Integrity', () => {
       documentId: testDocument._id,
       versionA: 1,
       versionB: 2,
-      user: officerUser,
+      user: verifierUser,
     });
 
     expect(comparison.diff.hashChanged).toBe(true);
