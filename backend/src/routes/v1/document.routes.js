@@ -81,10 +81,10 @@ router.get(
   asyncWrapper(getDocumentVersions)
 );
 
-// POST /api/v1/documents/:id/versions (Create new document version / revision: Officer, Verifier, Admin)
+// POST /api/v1/documents/:id/versions (Create new document version / revision: Verifier, Admin only)
 router.post(
   '/:id/versions',
-  requireRole(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN),
+  requireRole(ROLES.VERIFIER, ROLES.ADMIN),
   handleSingleUpload('file'),
   validateCreateVersion,
   asyncWrapper(createDocumentVersion)

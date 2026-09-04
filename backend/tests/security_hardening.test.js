@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { connectToTestDb, closeTestDb } = require('./testDb');
 const bcrypt = require('bcryptjs');
 const { User, Case, Document, AuditLog, RefreshToken } = require('../src/models');
 const { ROLES } = require('../src/constants/roles');
@@ -22,17 +22,12 @@ const aiOcrService = require('../src/services/aiOcr.service');
 const searchService = require('../src/services/search.service');
 const config = require('../src/config/env');
 
-let mongoServer;
-
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  const uri = mongoServer.getUri();
-  await mongoose.connect(uri);
+  await connectToTestDb();
 });
 
 afterAll(async () => {
-  await mongoose.disconnect();
-  await mongoServer.stop();
+  await closeTestDb();
 });
 
 afterEach(async () => {

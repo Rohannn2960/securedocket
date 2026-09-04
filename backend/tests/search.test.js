@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { connectToTestDb, closeTestDb } = require('./testDb');
 const searchService = require('../src/services/search.service');
 const vectorService = require('../src/services/vector.service');
 const Document = require('../src/models/Document');
@@ -7,20 +7,12 @@ const { Case } = require('../src/models/Case');
 const User = require('../src/models/User');
 const { ROLES } = require('../src/constants/roles');
 
-let mongoServer;
-
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  const uri = mongoServer.getUri();
-  await mongoose.connect(uri, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  });
+  await connectToTestDb();
 });
 
 afterAll(async () => {
-  await mongoose.disconnect();
-  await mongoServer.stop();
+  await closeTestDb();
 });
 
 afterEach(async () => {

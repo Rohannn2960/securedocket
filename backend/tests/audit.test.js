@@ -1,20 +1,16 @@
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { connectToTestDb, closeTestDb } = require('./testDb');
 const { AuditLog } = require('../src/models');
 const { recordAuditEntry, verifyAuditChainIntegrity } = require('../src/services/audit.service');
 const { AUDIT_ACTIONS } = require('../src/constants/actions');
 const { calculateAuditHash, GENESIS_HASH } = require('../src/utils/crypto');
 
-let mongoServer;
-
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  await mongoose.connect(mongoServer.getUri());
+  await connectToTestDb();
 });
 
 afterAll(async () => {
-  await mongoose.disconnect();
-  await mongoServer.stop();
+  await closeTestDb();
 });
 
 beforeEach(async () => {

@@ -43,6 +43,7 @@ function validateEnv() {
     // AI & OCR
     gemini: {
       apiKey: process.env.GEMINI_API_KEY || '',
+      modelName: process.env.GEMINI_MODEL_NAME || 'gemini-2.5-flash',
       confidenceThreshold: parseFloat(process.env.OCR_CONFIDENCE_THRESHOLD) || 0.80,
     },
 

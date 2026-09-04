@@ -18,9 +18,23 @@ function calculateSha256(data) {
  */
 const GENESIS_HASH = '0'.repeat(64);
 
+function canonicalizeForHash(value) {
+  if (value === null || value === undefined) return 'null';
+  if (Buffer.isBuffer(value)) return value.toString('base64');
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalizeForHash(item)).join(',')}]`;
+  }
+  if (typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalizeForHash(value[key])}`).join(',')}}`;
+  }
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(String(value));
+}
+
 function calculateAuditHash(previousHash, payload) {
   const normalizedPrev = previousHash || GENESIS_HASH;
-  const canonicalPayload = JSON.stringify(payload, Object.keys(payload).sort());
+  const canonicalPayload = canonicalizeForHash(payload);
   return calculateSha256(`${normalizedPrev}:${canonicalPayload}`);
 }
 

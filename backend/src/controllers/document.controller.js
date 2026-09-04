@@ -89,20 +89,6 @@ async function getDocumentViewUrl(req, res) {
   const { id } = req.params;
   const result = await documentService.generatePresignedViewUrl(id, req.user, 300);
 
-  await recordAuditEntry({
-    userId: req.user.id,
-    documentId: result.document._id,
-    caseId: result.document.caseId._id || result.document.caseId,
-    action: AUDIT_ACTIONS.DOCUMENT_VIEW,
-    details: {
-      s3Key: result.document.s3Key,
-      sha256Hash: result.document.sha256Hash,
-      expiresInSeconds: 300,
-    },
-    ipAddress: req.ip,
-    userAgent: req.headers['user-agent'],
-  });
-
   return ApiResponse.success(res, {
     message: 'Presigned S3 view URL generated (Valid for 5 minutes)',
     data: {

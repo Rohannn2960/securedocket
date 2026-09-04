@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const { AuditLog } = require('../models');
 const { calculateAuditHash, GENESIS_HASH } = require('../utils/crypto');
 const logger = require('../config/logger');
@@ -15,49 +16,52 @@ async function recordAuditEntry({
   userAgent = 'unknown',
 }) {
   try {
-    // 1. Fetch latest audit block to obtain previousHash
-    const lastEntry = await AuditLog.findOne().sort({ timestamp: -1, _id: -1 }).lean();
-    const previousHash = lastEntry ? lastEntry.currentHash : GENESIS_HASH;
+    let auditRecord;
+    let retries = 0;
 
-    // 2. Build payload object
-    const timestamp = new Date();
-    const payload = {
-      userId: userId ? userId.toString() : null,
-      action,
-      documentId: documentId ? documentId.toString() : null,
-      caseId: caseId ? caseId.toString() : null,
-      details,
-      timestamp: timestamp.toISOString(),
-    };
+    while (retries < 5) {
+      try {
+        const lastEntry = await AuditLog.findOne({}, {}, { sort: { timestamp: -1, _id: -1 } }).lean();
+        const previousHash = lastEntry ? lastEntry.currentHash : GENESIS_HASH;
+        const timestamp = new Date();
+        const payload = {
+          userId: userId ? userId.toString() : null,
+          action,
+          documentId: documentId ? documentId.toString() : null,
+          caseId: caseId ? caseId.toString() : null,
+          details,
+          timestamp: timestamp.toISOString(),
+        };
+        const currentHash = calculateAuditHash(previousHash, payload);
 
-    // 3. Compute chained currentHash
-    const currentHash = calculateAuditHash(previousHash, payload);
+        const created = await AuditLog.create({
+          userId,
+          action,
+          documentId,
+          caseId,
+          timestamp,
+          previousHash,
+          currentHash,
+          details,
+          ipAddress,
+          userAgent,
+          isChainValid: true,
+        });
 
-    // 4. Persist to MongoDB
-    const auditRecord = await AuditLog.create({
-      userId,
-      action,
-      documentId,
-      caseId,
-      timestamp,
-      previousHash,
-      currentHash,
-      details,
-      ipAddress,
-      userAgent,
-      isChainValid: true,
-    });
+        auditRecord = created;
+        return auditRecord;
+      } catch (error) {
+        if (error && error.code === 11000) {
+          retries += 1;
+          continue;
+        }
+        throw error;
+      }
+    }
 
-    logger.audit(action, `Audit record ${auditRecord._id} chained with hash ${currentHash.substring(0, 12)}...`, {
-      userId,
-      documentId,
-      action,
-    });
-
-    return auditRecord;
+    throw new Error('Concurrent audit write retry limit exceeded');
   } catch (error) {
     logger.error('Failed to record cryptographic audit entry', { error, action, userId });
-    // In strict compliance environments, we do not swallow audit failures silently
     throw error;
   }
 }

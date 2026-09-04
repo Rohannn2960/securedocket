@@ -1,20 +1,15 @@
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { connectToTestDb, closeTestDb } = require('./testDb');
 const intelligenceService = require('../src/services/intelligence.service');
 const { Case, Document, User } = require('../src/models');
 const { ROLES } = require('../src/constants/roles');
 
-let mongoServer;
-
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  const uri = mongoServer.getUri();
-  await mongoose.connect(uri);
+  await connectToTestDb();
 });
 
 afterAll(async () => {
-  await mongoose.disconnect();
-  await mongoServer.stop();
+  await closeTestDb();
 });
 
 afterEach(async () => {

@@ -349,10 +349,10 @@ class DocumentService {
    */
   async createDocumentVersion({ documentId, file, changeDescription, updatedFields, title, user }) {
     // 1. RBAC Clearance Check
-    if (user.role === ROLES.AUDITOR) {
+    if (![ROLES.VERIFIER, ROLES.ADMIN].includes(user.role)) {
       throw new ApiError(
         HTTP_STATUS.FORBIDDEN,
-        'Access forbidden: Auditors are granted read-only oversight clearance and cannot modify documents.',
+        `Access forbidden: Role '${user.role}' is not authorized to create a document revision. Only Verifiers and Admins may do so.`,
         ERROR_CODES.INSUFFICIENT_PERMISSIONS
       );
     }

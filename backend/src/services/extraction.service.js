@@ -225,13 +225,17 @@ class ExtractionService {
 
     const previousValue = existing.value;
     const aiOriginalValue = existing.aiValue !== undefined ? existing.aiValue : previousValue;
+    const sourceReference = existing.sourceReference || 'Manual correction';
+    const ledgerConfidence = typeof existing.confidence === 'number' ? existing.confidence : 0.85;
 
     doc.extractedFields[fieldName] = encryptFieldValues({
       ...existing,
       field: fieldName,
-      aiValue: aiOriginalValue, // Preserve original AI value
+      aiValue: aiOriginalValue,
       humanValue: correctedValue,
       value: correctedValue,
+      confidence: ledgerConfidence,
+      sourceReference,
       isCorrected: true,
       status: 'corrected',
       correctedBy: user.id,
@@ -252,6 +256,8 @@ class ExtractionService {
         previousValue,
         correctedValue,
         correctedByRole: user.role,
+        sourceReference: existing.sourceReference || 'Manual correction',
+        confidence: existing.confidence,
       },
     });
 

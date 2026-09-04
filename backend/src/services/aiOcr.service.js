@@ -13,7 +13,7 @@ class AiOcrService {
   constructor() {
     this.apiKey = config.gemini.apiKey || '';
     this.genAI = this.apiKey ? new GoogleGenerativeAI(this.apiKey) : null;
-    this.modelName = 'gemini-1.5-flash';
+    this.modelName = config.gemini.modelName || 'gemini-2.5-flash';
   }
 
   /**
@@ -137,7 +137,7 @@ Strictly return valid JSON only.`;
         const responseText = response.response.text();
 
         const parsed = JSON.parse(responseText);
-        return this._normalizeExtractionResult(parsed, 'gemini-1.5-flash');
+        return this._normalizeExtractionResult(parsed, this.modelName);
       } catch (err) {
         lastError = err;
         if (attempt < maxRetries) {
@@ -155,41 +155,52 @@ Strictly return valid JSON only.`;
    */
   async _processWithLocalFallback({ fileBuffer, mimeType, fileName, documentTypeHint }) {
     let extractedText = '';
+    const isPdf = mimeType === 'application/pdf' || (fileName && fileName.toLowerCase().endsWith('.pdf'));
+    const isImage = mimeType.startsWith('image/') || (fileName && /\.(png|jpg|jpeg|tiff|tif|webp)$/i.test(fileName));
+    const isDocx = mimeType.includes('officedocument') || (fileName && fileName.toLowerCase().endsWith('.docx'));
 
-    // 1. Extract raw text from PDF/Text buffer
     try {
-      if (mimeType === 'application/pdf' || (fileName && fileName.toLowerCase().endsWith('.pdf'))) {
+      if (isPdf) {
         const pdfData = await pdfParse(fileBuffer);
         if (pdfData && pdfData.text && pdfData.text.trim().length > 0) {
-          extractedText = pdfData.text;
-        } else {
-          extractedText = fileBuffer.toString('utf8');
+          extractedText = pdfData.text.trim();
         }
-      } else {
-        extractedText = fileBuffer.toString('utf8');
       }
     } catch (err) {
-      extractedText = fileBuffer.toString('utf8');
+      logger.warn(`[AI OCR] PDF text extraction unavailable for ${fileName}`, { error: err.message });
+      extractedText = '';
     }
 
-    // Clean up text
-    const cleanText = (extractedText || fileBuffer.toString('utf8')).replace(/\r\n/g, '\n').trim();
+    if (!extractedText && isImage) {
+      logger.warn(`[AI OCR] Image document ${fileName} does not contain machine-readable text; requiring human review for OCR fallback.`, { mimeType });
+      extractedText = '';
+    }
 
-    // 2. Classify Document based on vocabulary
-    const classification = this._classifyText(cleanText, fileName, documentTypeHint);
+    if (!extractedText && isDocx) {
+      logger.warn(`[AI OCR] DOCX fallback is not a text extraction pathway for ${fileName}; requiring human review pending a proper parser.`, { mimeType });
+      extractedText = '';
+    }
 
-    // 3. Extract schema fields based on classified type
-    const fields = this._extractFieldsByRule(cleanText, classification.predictedType, fileName);
+    if (!extractedText && fileBuffer && fileBuffer.length > 0) {
+      const candidateText = fileBuffer.toString('utf8');
+      const looksTextual = candidateText && candidateText.trim().length > 0 && /[A-Za-z0-9]/.test(candidateText);
+      if (looksTextual) {
+        extractedText = candidateText;
+      }
+    }
 
-    // 4. Calculate aggregate confidence
+    const cleanText = extractedText.replace(/\r\n/g, '\n').trim();
+    const classification = this._classifyText(cleanText || '', fileName, documentTypeHint);
+    const fields = cleanText ? this._extractFieldsByRule(cleanText, classification.predictedType, fileName) : [];
+
     let totalConf = 0;
     fields.forEach((f) => {
       totalConf += f.confidence;
     });
-    const avgConfidence = fields.length > 0 ? parseFloat((totalConf / fields.length).toFixed(2)) : 0.85;
+    const avgConfidence = fields.length > 0 ? parseFloat((totalConf / fields.length).toFixed(2)) : 0.15;
 
     return {
-      rawText: cleanText || `Extracted evidence binary payload for ${fileName}`,
+      rawText: cleanText,
       classification,
       fields,
       ocrMetadata: {
@@ -197,6 +208,8 @@ Strictly return valid JSON only.`;
         processedAt: new Date(),
         averageConfidence: avgConfidence,
         rawTextLength: cleanText.length,
+        needsHumanReview: !cleanText || avgConfidence < 0.6,
+        reviewPriority: !cleanText || avgConfidence < 0.6 ? 'critical' : 'high',
       },
     };
   }

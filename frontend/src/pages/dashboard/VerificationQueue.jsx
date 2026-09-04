@@ -66,9 +66,10 @@ export function VerificationQueue() {
   const handleOpenSecureView = async (docId, e) => {
     e.stopPropagation();
     try {
-      const res = await documentService.getPresignedViewUrl(docId, 'inline');
-      if (res.data?.viewUrl) {
-        window.open(res.data.viewUrl, '_blank', 'noopener,noreferrer');
+      const res = await documentService.getDocumentViewUrl(docId);
+      const viewUrl = res.data?.url || res.data?.viewUrl;
+      if (viewUrl) {
+        window.open(viewUrl, '_blank', 'noopener,noreferrer');
       }
     } catch (err) {
       alert('Failed to generate 5-minute presigned streaming link: ' + (err.response?.data?.error?.message || err.message));
