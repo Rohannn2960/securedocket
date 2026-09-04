@@ -21,7 +21,7 @@ export function AuditLogs() {
     try {
       setLoading(true);
       const res = await auditService.getAuditLogs({ limit: 50 });
-      setAuditLogs(res.data);
+      setAuditLogs(Array.isArray(res.data) ? res.data : res.data?.logs || []);
     } catch (error) {
       console.error('Failed to fetch audit logs:', error);
     } finally {

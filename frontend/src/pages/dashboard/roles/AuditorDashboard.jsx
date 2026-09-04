@@ -39,8 +39,8 @@ export function AuditorDashboard({ user }) {
           auditService.getAuditLogs({ limit: 5 }),
         ]);
         setStats(statsRes.data);
-        setCases(casesRes.data || []);
-        setAuditLogs(auditRes.data || []);
+        setCases(Array.isArray(casesRes.data) ? casesRes.data : casesRes.data?.cases || []);
+        setAuditLogs(Array.isArray(auditRes.data) ? auditRes.data : auditRes.data?.logs || []);
       } catch (err) {
         console.error('Failed to load auditor dashboard data:', err);
       } finally {

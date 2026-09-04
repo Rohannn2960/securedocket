@@ -31,7 +31,7 @@ export function OfficerDashboard({ user }) {
           caseService.getCases({ limit: 5 }),
         ]);
         setStats(statsRes.data);
-        setCases(casesRes.data || []);
+        setCases(Array.isArray(casesRes.data) ? casesRes.data : casesRes.data?.cases || []);
       } catch (err) {
         console.error('Failed to load officer dashboard data:', err);
       } finally {

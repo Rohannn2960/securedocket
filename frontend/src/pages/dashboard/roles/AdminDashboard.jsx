@@ -34,8 +34,8 @@ export function AdminDashboard({ user }) {
           userService.getUsers({ limit: 5 }),
         ]);
         setStats(statsRes.data);
-        setCases(casesRes.data || []);
-        setUsers(usersRes.data || []);
+        setCases(Array.isArray(casesRes.data) ? casesRes.data : casesRes.data?.cases || []);
+        setUsers(Array.isArray(usersRes.data) ? usersRes.data : usersRes.data?.users || []);
       } catch (err) {
         console.error('Failed to load admin dashboard data:', err);
       } finally {
