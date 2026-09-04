@@ -1,9 +1,13 @@
 const mongoose = require('mongoose');
 const { connectToTestDb, closeTestDb } = require('./testDb');
-const { AuditLog } = require('../src/models');
+const { AuditLog, User, Case, Document } = require('../src/models');
 const { recordAuditEntry, verifyAuditChainIntegrity } = require('../src/services/audit.service');
 const { AUDIT_ACTIONS } = require('../src/constants/actions');
 const { calculateAuditHash, GENESIS_HASH } = require('../src/utils/crypto');
+const documentService = require('../src/services/document.service');
+const { streamVaultDocument } = require('../src/controllers/document.controller');
+const { ROLES } = require('../src/constants/roles');
+const { calculateSha256 } = require('../src/utils/crypto');
 
 beforeAll(async () => {
   await connectToTestDb();
@@ -33,6 +37,161 @@ describe('Tamper-Evident Audit Trail - Hash Chain Verification', () => {
       });
     }
   };
+
+  test('0. Successful document view should create exactly one DOCUMENT_VIEW audit entry', async () => {
+    const user = await User.create({
+      email: 'docview.audit@example.com',
+      passwordHash: 'hashed123',
+      name: 'Audit View User',
+      role: ROLES.ADMIN,
+    });
+
+    const testCase = await Case.create({
+      caseNumber: 'CASE-VIEW-AUDIT-01',
+      title: 'View Audit Case',
+      description: 'Audit regression case',
+      leadOfficer: user._id,
+      assignedOfficers: [user._id],
+    });
+
+    const buffer = Buffer.from('%PDF-1.4\nDocument view regression test');
+    const sha256 = calculateSha256(buffer);
+
+    const doc = await Document.create({
+      caseId: testCase._id,
+      title: 'View Audit Document',
+      documentType: 'FIR',
+      s3Key: 'cases/CASE-VIEW-AUDIT-01/view-audit-regression.pdf',
+      s3Bucket: 'secure-vault',
+      fileName: 'view-audit-regression.pdf',
+      originalName: 'view-audit-regression.pdf',
+      fileSize: buffer.length,
+      mimeType: 'application/pdf',
+      uploadedBy: user._id,
+      sha256Hash: sha256,
+      version: 1,
+      versions: [{
+        versionNumber: 1,
+        version: 1,
+        s3Key: 'cases/CASE-VIEW-AUDIT-01/view-audit-regression.pdf',
+        sha256Hash: sha256,
+        fileSize: buffer.length,
+        mimeType: 'application/pdf',
+        uploadedBy: user._id,
+        editedBy: user._id,
+        createdAt: new Date(),
+        uploadedAt: new Date(),
+        changeDescription: 'Initial secure ingestion',
+        changeNotes: 'Initial secure ingestion',
+      }],
+      extractedFields: { docNumber: 'DOC-001' },
+    });
+
+    const generated = await documentService.generatePresignedViewUrl(doc._id, {
+      id: user._id,
+      role: user.role,
+    });
+
+    const parsedUrl = new URL(generated.url);
+    const expires = parsedUrl.searchParams.get('expires');
+    const signature = parsedUrl.searchParams.get('signature');
+
+    const req = {
+      params: { id: doc._id.toString() },
+      query: { expires, signature, disposition: 'inline' },
+      ip: '127.0.0.1',
+      headers: { 'user-agent': 'jest-audit-regression' },
+    };
+    const res = {
+      setHeader: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      send: jest.fn(),
+    };
+
+    await streamVaultDocument(req, res);
+
+    const viewLogs = await AuditLog.find({
+      action: AUDIT_ACTIONS.DOCUMENT_VIEW,
+      documentId: doc._id,
+    }).sort({ timestamp: 1 });
+
+    expect(viewLogs).toHaveLength(1);
+    expect(viewLogs[0].userId.toString()).toBe(user._id.toString());
+  });
+
+  test('0b. Unauthorized vault stream should not create a successful DOCUMENT_VIEW audit entry', async () => {
+    const user = await User.create({
+      email: 'unauthorized.view@example.com',
+      passwordHash: 'hashed123',
+      name: 'Unauthorized Viewer',
+      role: ROLES.OFFICER,
+    });
+
+    const testCase = await Case.create({
+      caseNumber: 'CASE-UNAUTH-AUDIT-01',
+      title: 'Unauthorized View Audit Case',
+      description: 'Audit unauthorized access case',
+      leadOfficer: user._id,
+      assignedOfficers: [user._id],
+    });
+
+    const buffer = Buffer.from('%PDF-1.4\nUnauthorized access block');
+    const sha256 = calculateSha256(buffer);
+
+    const doc = await Document.create({
+      caseId: testCase._id,
+      title: 'Unauthorized Access Document',
+      documentType: 'FIR',
+      s3Key: 'cases/CASE-UNAUTH-AUDIT-01/unauthorized-view.pdf',
+      s3Bucket: 'secure-vault',
+      fileName: 'unauthorized-view.pdf',
+      originalName: 'unauthorized-view.pdf',
+      fileSize: buffer.length,
+      mimeType: 'application/pdf',
+      uploadedBy: user._id,
+      sha256Hash: sha256,
+      version: 1,
+      versions: [{
+        versionNumber: 1,
+        version: 1,
+        s3Key: 'cases/CASE-UNAUTH-AUDIT-01/unauthorized-view.pdf',
+        sha256Hash: sha256,
+        fileSize: buffer.length,
+        mimeType: 'application/pdf',
+        uploadedBy: user._id,
+        editedBy: user._id,
+        createdAt: new Date(),
+        uploadedAt: new Date(),
+        changeDescription: 'Initial secure ingestion',
+        changeNotes: 'Initial secure ingestion',
+      }],
+      extractedFields: { docNumber: 'DOC-002' },
+    });
+
+    const futureExpiry = Math.floor(Date.now() / 1000) + 300;
+    const invalidReq = {
+      params: { id: doc._id.toString() },
+      query: { expires: String(futureExpiry), signature: 'invalid-signature', disposition: 'inline' },
+      ip: '127.0.0.1',
+      headers: { 'user-agent': 'jest-audit-regression' },
+    };
+    const invalidRes = {
+      setHeader: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      send: jest.fn(),
+    };
+
+    await expect(streamVaultDocument(invalidReq, invalidRes)).rejects.toThrow(
+      'Cryptographic signature mismatch: Access token is invalid or has been tampered with.'
+    );
+
+    const viewLogs = await AuditLog.find({
+      action: AUDIT_ACTIONS.DOCUMENT_VIEW,
+      documentId: doc._id,
+    });
+
+    expect(viewLogs).toHaveLength(0);
+  });
 
   test('1. Normal chain passes verification', async () => {
     await createNormalChain(3);

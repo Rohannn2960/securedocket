@@ -148,20 +148,6 @@ async function streamVaultDocument(req, res) {
     signature,
   });
 
-  await recordAuditEntry({
-    userId: result.document.uploadedBy?._id || result.document.uploadedBy || null,
-    documentId: result.document._id,
-    caseId: result.document.caseId?._id || result.document.caseId,
-    action: disposition === 'attachment' ? AUDIT_ACTIONS.DOCUMENT_DOWNLOAD : AUDIT_ACTIONS.DOCUMENT_VIEW,
-    details: {
-      s3Key: result.document.s3Key,
-      sha256Hash: result.document.sha256Hash,
-      streamingMethod: 'LOCAL_VAULT_STREAM',
-    },
-    ipAddress: req.ip,
-    userAgent: req.headers['user-agent'],
-  });
-
   const mimeType = result.mimeType || 'application/octet-stream';
   res.setHeader('Content-Type', mimeType);
   res.setHeader(
