@@ -86,6 +86,7 @@ class DocumentService {
       version: 1,
       versions: [
         {
+          versionNumber: 1,
           version: 1,
           s3Key,
           sha256Hash,
