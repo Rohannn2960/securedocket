@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { connectToTestDb, closeTestDb } = require('./testDb');
 const { AuditLog, User, Case, Document } = require('../src/models');
-const { recordAuditEntry, verifyAuditChainIntegrity } = require('../src/services/audit.service');
+const { recordAuditEntry, verifyAuditChainIntegrity, extractClientIp } = require('../src/services/audit.service');
 const { AUDIT_ACTIONS } = require('../src/constants/actions');
 const { calculateAuditHash, GENESIS_HASH } = require('../src/utils/crypto');
 const documentService = require('../src/services/document.service');
@@ -288,5 +288,123 @@ describe('Tamper-Evident Audit Trail - Hash Chain Verification', () => {
     const result = await verifyAuditChainIntegrity();
     expect(result.valid).toBe(false);
     expect(result.reason).toBe('PREVIOUS_HASH_MISMATCH');
+  });
+
+  describe('7. Server-Side IP Address Tracking & Hash-Chain Security', () => {
+    test('Records server-derived IPv4 address and ignores frontend/body spoofed IP', async () => {
+      const mockReq = {
+        ip: '198.51.100.23',
+        headers: { 'user-agent': 'SecureBrowser/2.0' },
+        body: { ipAddress: '10.99.99.99' }, // Attacker trying to spoof IP in body
+        query: { ipAddress: '172.16.0.1' }, // Attacker trying to spoof IP in query
+      };
+
+      const entry = await recordAuditEntry({
+        userId: dummyUserId,
+        action: AUDIT_ACTIONS.CASE_CREATE,
+        caseId: dummyCaseId,
+        details: { caseNumber: 'TEST/IP/01' },
+        req: mockReq,
+        ipAddress: '10.99.99.99', // Direct param attempt must also be overridden by req
+      });
+
+      expect(entry.ipAddress).toBe('198.51.100.23');
+      expect(entry.ipAddress).not.toBe('10.99.99.99');
+      expect(entry.userAgent).toBe('SecureBrowser/2.0');
+
+      // Verify chain succeeds with this real IP
+      const result = await verifyAuditChainIntegrity();
+      expect(result.valid).toBe(true);
+    });
+
+    test('Properly handles and unmaps IPv4-mapped IPv6 addresses (::ffff:)', async () => {
+      const mockReq = {
+        ip: '::ffff:192.0.2.146',
+        headers: { 'user-agent': 'NodeAgent' },
+      };
+
+      const entry = await recordAuditEntry({
+        userId: dummyUserId,
+        action: AUDIT_ACTIONS.DOCUMENT_UPLOAD,
+        documentId: dummyDocId,
+        req: mockReq,
+      });
+
+      expect(entry.ipAddress).toBe('192.0.2.146');
+    });
+
+    test('Supports native IPv6 addresses without corruption', async () => {
+      const nativeIpv6 = '2001:0db8:85a3:0000:0000:8a2e:0370:7334';
+      const mockReq = {
+        ip: nativeIpv6,
+        headers: { 'user-agent': 'IPv6Client' },
+      };
+
+      const entry = await recordAuditEntry({
+        userId: dummyUserId,
+        action: AUDIT_ACTIONS.DOCUMENT_VERIFY,
+        documentId: dummyDocId,
+        req: mockReq,
+      });
+
+      expect(entry.ipAddress).toBe(nativeIpv6);
+
+      const result = await verifyAuditChainIntegrity();
+      expect(result.valid).toBe(true);
+    });
+
+    test('IP address is included in currentHash; tampering with stored IP breaks chain verification', async () => {
+      const mockReq = {
+        ip: '203.0.113.88',
+        headers: { 'user-agent': 'TestAgent' },
+      };
+
+      const entry = await recordAuditEntry({
+        userId: dummyUserId,
+        action: AUDIT_ACTIONS.DOCUMENT_FIELD_CORRECT,
+        documentId: dummyDocId,
+        details: { field: 'accusedName' },
+        req: mockReq,
+      });
+
+      // Chain should be 100% valid initially
+      let result = await verifyAuditChainIntegrity();
+      expect(result.valid).toBe(true);
+
+      // Maliciously tamper with the stored IP address in the database
+      await AuditLog.collection.updateOne(
+        { _id: entry._id },
+        { $set: { ipAddress: '198.51.100.99' } }
+      );
+
+      // Verify chain MUST detect tampering because IP participated in currentHash
+      result = await verifyAuditChainIntegrity();
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('PAYLOAD_HASH_TAMPERED');
+      expect(result.firstBrokenEntry.toString()).toBe(entry._id.toString());
+    });
+
+    test('Fallback to socket remoteAddress when req.ip is not directly set', () => {
+      const mockReq = {
+        socket: { remoteAddress: '192.168.1.150' },
+      };
+      const extracted = extractClientIp(mockReq);
+      expect(extracted).toBe('192.168.1.150');
+    });
+
+    test('Does not create duplicate audit entries', async () => {
+      const initialCount = await AuditLog.countDocuments();
+      const mockReq = { ip: '10.0.0.5' };
+
+      await recordAuditEntry({
+        userId: dummyUserId,
+        action: AUDIT_ACTIONS.DOCUMENT_VIEW,
+        documentId: dummyDocId,
+        req: mockReq,
+      });
+
+      const finalCount = await AuditLog.countDocuments();
+      expect(finalCount).toBe(initialCount + 1);
+    });
   });
 });

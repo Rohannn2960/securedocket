@@ -63,6 +63,7 @@ const auditLogSchema = new mongoose.Schema(
   },
   {
     timestamps: { createdAt: true, updatedAt: false }, // Audit logs are strictly immutable
+    minimize: false,
   }
 );
 

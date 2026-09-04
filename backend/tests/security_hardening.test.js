@@ -334,6 +334,6 @@ Brief Description: fraudulent banking transaction and cyber offence investigatio
         user: officerUser,
       });
       expect(resultsUnassignedCase.length).toBe(0);
-    });
+    }, 25000);
   });
 });

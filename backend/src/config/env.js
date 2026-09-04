@@ -54,6 +54,11 @@ function validateEnv() {
       max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 100,
       authMax: parseInt(process.env.AUTH_RATE_LIMIT_MAX_REQUESTS, 10) || 10,
     },
+
+    // Reverse Proxy & Network Trust
+    trustProxy: process.env.TRUST_PROXY !== undefined
+      ? (process.env.TRUST_PROXY === 'true' ? true : process.env.TRUST_PROXY === 'false' ? false : (!isNaN(Number(process.env.TRUST_PROXY)) ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY))
+      : 1,
   };
 
   // Fail-fast checks in production

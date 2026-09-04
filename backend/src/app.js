@@ -6,12 +6,21 @@ const { apiRateLimiter } = require('./middleware/rateLimiter');
 const errorHandler = require('./middleware/error.middleware');
 const ApiError = require('./utils/apiError');
 const { HTTP_STATUS, ERROR_CODES } = require('./constants/statusCodes');
+const config = require('./config/env');
+const { auditContextMiddleware } = require('./services/audit.service');
 const apiRoutes = require('./routes');
 
 const app = express();
 
-// Trust reverse proxy (e.g. NGINX, AWS ALB) for accurate client IP in rate limiting & audit logs
-app.set('trust proxy', 1);
+// Trust reverse proxy (e.g. NGINX, AWS ALB) based on environment configuration
+if (config.trustProxy !== false) {
+  app.set('trust proxy', config.trustProxy);
+} else {
+  app.set('trust proxy', false);
+}
+
+// 0. Audit Context Tracking (Server-side IP and request context propagation)
+app.use(auditContextMiddleware);
 
 // 1. Security Headers & CORS
 app.use(helmetConfig);

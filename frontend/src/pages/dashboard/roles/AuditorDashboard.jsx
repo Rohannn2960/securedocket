@@ -190,9 +190,14 @@ export function AuditorDashboard({ user }) {
                     <span className="text-slate-400 truncate max-w-[200px]">
                       {item.documentId?.title || item.caseId?.title || 'System Ledger'}
                     </span>
-                    <span className="text-emerald-400 text-[11px]">
-                      {truncateHash(item.currentHash, 6, 6)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-cyan-400 text-[10px] bg-defense-950 px-1.5 py-0.5 rounded border border-slate-800">
+                        IP: {item.ipAddress || 'Direct'}
+                      </span>
+                      <span className="text-emerald-400 text-[11px]">
+                        {truncateHash(item.currentHash, 6, 6)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}

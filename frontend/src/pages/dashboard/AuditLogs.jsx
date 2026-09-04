@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link2, ShieldCheck, CheckCircle2, RefreshCw, AlertTriangle, User, Clock, Terminal } from 'lucide-react';
+import { Link2, ShieldCheck, CheckCircle2, RefreshCw, AlertTriangle, User, Clock, Terminal, Globe } from 'lucide-react';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { Badge } from '../../components/common/Badge';
@@ -178,32 +178,88 @@ export function AuditLogs() {
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-4 text-xs font-mono text-slate-400">
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-3 text-xs font-mono">
+                  <span className="flex items-center gap-1 text-slate-400">
+                    <Clock className="w-3.5 h-3.5 text-slate-500" />
                     {formatDate(log.timestamp)}
                   </span>
-                  <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                    IP: {log.ipAddress || 'unknown'}
+                  <span className="flex items-center gap-1.5 bg-defense-950 px-2.5 py-1 rounded-lg border border-cyan-500/30 text-cyan-300 font-semibold shadow-sm">
+                    <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>IP: {log.ipAddress || 'Internal Direct'}</span>
                   </span>
                 </div>
               </div>
 
-            {/* Actor & Action Details */}
-            <div className="text-xs text-slate-300 flex items-center gap-2">
-              <User className="w-4 h-4 text-cyan-400" />
-              <span>Actor:</span>
-              {log.userId ? (
-                <>
-                  <span className="font-semibold text-slate-100">{log.userId.name}</span>
-                  <Badge variant="default" size="xs">
-                    {log.userId.role}
-                  </Badge>
-                </>
-              ) : (
-                <span className="font-semibold text-slate-400 italic">System</span>
+              {/* Event Metadata Grid (Actor, IP, Timestamp, Context) */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-1 text-xs">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 block">
+                    Officer / Actor:
+                  </span>
+                  <div className="flex items-center gap-1.5 text-slate-200">
+                    <User className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                    <span className="font-semibold truncate">
+                      {log.userId ? log.userId.name : 'System Service'}
+                    </span>
+                    {log.userId?.role && (
+                      <Badge variant="default" size="xs">
+                        {log.userId.role}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 block">
+                    Source IP Address:
+                  </span>
+                  <div className="font-mono text-cyan-300 font-semibold flex items-center gap-1">
+                    <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>{log.ipAddress || 'Internal / Socket'}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 block">
+                    Audited Timestamp:
+                  </span>
+                  <div className="text-slate-300 font-mono text-[11px] flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-slate-400" />
+                    <span>{formatDate(log.timestamp)}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 block">
+                    Target Context:
+                  </span>
+                  <div className="text-slate-300 truncate text-[11px]">
+                    {log.caseId?.caseNumber
+                      ? `Case ${log.caseId.caseNumber}`
+                      : log.documentId?.title || 'System Ledger'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Relevant Details Breakdown */}
+              {log.details && Object.keys(log.details).length > 0 && (
+                <div className="p-2.5 rounded-lg bg-defense-950/70 border border-slate-800/80 text-xs font-mono space-y-1">
+                  <span className="text-[10px] uppercase text-slate-500 tracking-wider font-semibold block">
+                    Recorded Parameters:
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(log.details).slice(0, 6).map(([k, v]) => (
+                      <span
+                        key={k}
+                        className="px-2 py-0.5 rounded bg-defense-900 border border-slate-800 text-[11px] text-slate-300"
+                      >
+                        <strong className="text-slate-400">{k}:</strong>{' '}
+                        {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               )}
-            </div>
 
             {/* Cryptographic Link Panel (Previous Hash -> Current Hash) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-defense-950 p-3.5 rounded-xl border border-slate-800/80 font-mono text-xs">
