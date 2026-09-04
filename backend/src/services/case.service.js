@@ -3,6 +3,8 @@ const ApiError = require('../utils/apiError');
 const { ERROR_CODES, HTTP_STATUS } = require('../constants/statusCodes');
 const { ROLES } = require('../constants/roles');
 const logger = require('../config/logger');
+const { decryptDocumentFields } = require('../utils/crypto');
+const config = require('../config/env');
 
 class CaseService {
   /**
@@ -115,16 +117,19 @@ class CaseService {
       }
     }
 
-    // Fetch linked documents summary for this case
+    // Fetch linked documents for this case dossier
     const documents = await Document.find({ caseId })
-      .select('fileName originalName fileSizeBytes mimeType sha256Hash status isTampered createdAt')
+      .populate('uploadedBy', 'name email badgeNumber role')
+      .populate('verifiedBy', 'name email badgeNumber role')
       .sort({ createdAt: -1 })
       .lean();
 
+    const decryptedDocs = documents.map((doc) => decryptDocumentFields(doc, config.masterEncryptionKey));
+
     return {
       ...caseItem,
-      documents,
-      documentsCount: documents.length,
+      documents: decryptedDocs,
+      documentsCount: decryptedDocs.length,
     };
   }
 

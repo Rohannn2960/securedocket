@@ -15,7 +15,14 @@ class DocumentService {
   /**
    * Securely ingest and cryptographically hash an evidence document
    */
-  async ingestDocument({ caseId, title, documentType, file, description, tags = [], user }) {
+  async ingestDocument({ caseId, title, documentType, file, description, tags = [], user, requestTrace }) {
+    const step = requestTrace?.step || (() => {});
+    step('multer/file parsing complete', {
+      mimeType: file?.mimetype,
+      fileSizeBytes: file?.size,
+      fileName: file?.originalname,
+    });
+
     // 1. Verify Case Existence and Clearance
     const caseItem = await Case.findById(caseId);
     if (!caseItem) {
@@ -53,6 +60,15 @@ class DocumentService {
 
     // 4. Calculate Exact SHA-256 Hash of Accepted Bytes
     const sha256Hash = calculateSha256(file.buffer);
+    const sha256Elapsed = Date.now() - (requestTrace?.startedAt || Date.now());
+    console.log(
+      `[TIMING] 4. SHA-256 hashing complete | elapsedMs=${sha256Elapsed} | mimeType=${fileValidation.mimeType} | fileSizeBytes=${fileValidation.fileSize}`
+    );
+    step('SHA-256 hashing complete', {
+      mimeType: fileValidation.mimeType,
+      fileSizeBytes: fileValidation.fileSize,
+      sha256Prefix: sha256Hash?.slice(0, 12),
+    });
 
     // 5. Generate Server-Controlled S3 Key
     const s3Key = generateServerS3Key(caseItem.caseNumber, fileValidation.sanitizedName);
@@ -67,6 +83,16 @@ class DocumentService {
         sha256Hash,
         uploadedBy: user.id,
       },
+    });
+    const storageElapsed = Date.now() - (requestTrace?.startedAt || Date.now());
+    console.log(
+      `[TIMING] 3. file storage complete | elapsedMs=${storageElapsed} | mimeType=${fileValidation.mimeType} | fileSizeBytes=${fileValidation.fileSize}`
+    );
+    step('file storage complete', {
+      mimeType: fileValidation.mimeType,
+      fileSizeBytes: fileValidation.fileSize,
+      s3Key,
+      bucket: s3UploadResult?.bucket,
     });
 
     // 7. Store Metadata only in MongoDB
@@ -106,7 +132,7 @@ class DocumentService {
     // 8. Trigger AI OCR, Classification & Structured Extraction Pipeline
     try {
       const extractionService = require('./extraction.service');
-      await extractionService.extractAndProcessDocument(newDoc._id);
+      await extractionService.extractAndProcessDocument(newDoc._id, requestTrace);
     } catch (err) {
       logger.warn(`[Document Ingestion] Automated extraction encountered non-blocking issue: ${err.message}`);
     }

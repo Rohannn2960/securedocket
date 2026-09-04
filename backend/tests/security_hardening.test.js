@@ -196,6 +196,49 @@ describe('Phase 11: Security Hardening & Threat Review Verification', () => {
   });
 
   describe('4. AI Extraction & Zero Fabrication Guarantee', () => {
+    test('Accepts bilingual English + Malayalam legal FIR text as meaningful content', async () => {
+      const bilingualText = `FIRST INFORMATION REPORT
+പോലീസ് സ്റ്റേഷന്: തിരുവല്ല പോലീസ് സ്റ്റേഷന്
+FIR Number: CR/2026/0112-KER
+Date: 2026-04-16
+Complainant: രാമചന്ദ്രന്‌
+Accused: ഇഖ്ബാല്‌
+Sections: IPC 420, 468, 471
+Location: Ernakulam
+Brief Description: fraudulent banking transaction and cyber offence investigation.`;
+
+      const result = await aiOcrService._processWithLocalFallback({
+        fileBuffer: Buffer.from(bilingualText),
+        mimeType: 'image/png',
+        fileName: 'bilingual_fir.png',
+        documentTypeHint: 'FIR',
+      });
+
+      expect(result.classification.predictedType).toBe('FIR');
+      expect(result.ocrMetadata.needsHumanReview).toBe(false);
+      expect(result.ocrMetadata.averageConfidence).toBeGreaterThan(0.6);
+      expect(result.fields.some((f) => f.field === 'firNumber')).toBe(true);
+    });
+
+    test('Rejects low-quality or gibberish PPT/PDF text before certification', async () => {
+      const gibberish = Array.from({ length: 80 }, (_, index) => {
+        const token = ['FIR', 'Q#', 'm@', 'wZ', '||', '4^', 'K5', '§', '÷', '?'][index % 9];
+        return `${token}${index}`;
+      }).join(' ');
+
+      const result = await aiOcrService._processWithLocalFallback({
+        fileBuffer: Buffer.from(gibberish),
+        mimeType: 'application/pdf',
+        fileName: 'ppt_export_gibberish.pdf',
+        documentTypeHint: 'FIR',
+      });
+
+      expect(result.classification.predictedType).toBe('unknown');
+      expect(result.ocrMetadata.needsHumanReview).toBe(true);
+      expect(result.ocrMetadata.averageConfidence).toBeLessThan(0.6);
+      expect(result.fields.length).toBe(0);
+    });
+
     test('Local legal extractor never invents fake names or dates when fields are absent', async () => {
       // Short document with only a FIR number
       const shortText = 'First Information Report. Case Number: CR/2026/9999-CYBER. FIR lodged.';

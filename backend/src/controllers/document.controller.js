@@ -8,7 +8,20 @@ const { AUDIT_ACTIONS } = require('../constants/actions');
  * Ingest document with SHA-256 calculation & SSE-S3 storage
  */
 async function uploadDocument(req, res) {
+  const requestStartedAt = req._requestStartedAt || Date.now();
+  const step = (label, meta = {}) => {
+    const elapsedMs = Date.now() - requestStartedAt;
+    console.log(`[UPLOAD TRACE] ${label} elapsedMs=${elapsedMs} meta=${JSON.stringify({ ...meta, elapsedMs })}`);
+  };
+
   const { caseId, title, documentType, description, tags } = req.body;
+  step('request received', {
+    caseId,
+    documentType,
+    mimeType: req.file?.mimetype,
+    fileSizeBytes: req.file?.size,
+    fileName: req.file?.originalname,
+  });
 
   if (!caseId) {
     throw ApiError.badRequest('Target caseId is required for document ingestion');
@@ -27,6 +40,7 @@ async function uploadDocument(req, res) {
     description,
     tags: parsedTags,
     user: req.user,
+    requestTrace: { startedAt: requestStartedAt, step },
   });
 
   await recordAuditEntry({
@@ -45,6 +59,11 @@ async function uploadDocument(req, res) {
     ipAddress: req.ip,
     userAgent: req.headers['user-agent'],
   });
+
+  const responseElapsedMs = Date.now() - requestStartedAt;
+  console.log(
+    `[TIMING] 10. response sent | elapsedMs=${responseElapsedMs} | mimeType=${doc?.mimeType} | fileSizeBytes=${doc?.fileSize} | classification=${doc?.classification?.predictedType} | fieldCount=${Object.keys(doc?.extractedFields || {}).length}`
+  );
 
   return ApiResponse.created(res, {
     message: 'Document ingested and cryptographically hashed successfully',

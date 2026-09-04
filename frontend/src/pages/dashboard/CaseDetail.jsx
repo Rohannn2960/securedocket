@@ -155,17 +155,34 @@ export function CaseDetail() {
     }
   };
 
-  const handleOpenDocDetail = (doc) => {
+  const handleOpenDocDetail = async (doc) => {
     // Enrich with current case info
-    setSelectedDoc({
+    const initialDoc = {
       ...doc,
       caseId: {
         _id: caseData._id,
         caseNumber: caseData.caseNumber,
         title: caseData.title,
       },
-    });
+    };
+    setSelectedDoc(initialDoc);
     setIsDocDetailOpen(true);
+
+    const docId = doc._id || doc.id;
+    if (docId) {
+      try {
+        const res = await documentService.getDocumentById(docId);
+        const fullDoc = res.data?.document || res.data;
+        if (fullDoc) {
+          setSelectedDoc({
+            ...fullDoc,
+            caseId: fullDoc.caseId || initialDoc.caseId,
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to load complete document details:', err);
+      }
+    }
   };
 
   if (loading) {

@@ -1,5 +1,5 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const pdfParse = require('pdf-parse');
+const { PDFParse } = require('pdf-parse');
 const config = require('../config/env');
 const logger = require('../config/logger');
 const { ALL_DOCUMENT_TYPES, DOCUMENT_TYPES } = require('../constants/documentTypes');
@@ -13,7 +13,7 @@ class AiOcrService {
   constructor() {
     this.apiKey = config.gemini.apiKey || '';
     this.genAI = this.apiKey ? new GoogleGenerativeAI(this.apiKey) : null;
-    this.modelName = config.gemini.modelName || 'gemini-2.5-flash';
+    this.modelName = config.gemini.modelName || 'gemini-3.6-flash';
   }
 
   /**
@@ -21,10 +21,16 @@ class AiOcrService {
    */
   async processDocument({ fileBuffer, mimeType, fileName, documentTypeHint }) {
     const startTime = Date.now();
-    logger.info(`[AI OCR] Initiating document intelligence pipeline for ${fileName} (${mimeType}, ${fileBuffer?.length} bytes)`);
+    const provider = this.genAI && this.apiKey && this.apiKey !== 'your_gemini_api_key' && this.apiKey.trim() !== '' ? 'gemini' : 'local';
+    logger.info(`[AI OCR] Initiating document intelligence pipeline for ${fileName} (${mimeType}, ${fileBuffer?.length} bytes)`, {
+      mimeType,
+      fileSizeBytes: fileBuffer?.length || 0,
+      provider,
+      documentTypeHint,
+    });
 
     // 1. Attempt Primary: Gemini Vision / Multimodal API
-    if (this.genAI && this.apiKey && this.apiKey !== 'your_gemini_api_key' && this.apiKey.trim() !== '') {
+    if (provider === 'gemini') {
       try {
         const geminiResult = await this._processWithGeminiRetry({
           fileBuffer,
@@ -38,18 +44,27 @@ class AiOcrService {
             engine: 'gemini-vision',
             classification: geminiResult.classification?.predictedType,
             avgConfidence: geminiResult.ocrMetadata?.averageConfidence,
+            fieldCount: Array.isArray(geminiResult.fields) ? geminiResult.fields.length : 0,
+            mimeType,
+            fileSizeBytes: fileBuffer?.length || 0,
           });
           return geminiResult;
         }
       } catch (err) {
-        // Safe logging without leaking sensitive document content
         logger.warn(`[AI OCR] Gemini processing failed (${err.message}), seamlessly engaging local fallback extractor`, {
           errorCode: err.code || 'GEMINI_ERR',
           latencyMs: Date.now() - startTime,
+          mimeType,
+          fileSizeBytes: fileBuffer?.length || 0,
+          provider: 'gemini',
         });
       }
     } else {
-      logger.info(`[AI OCR] No active Gemini API key configured. Utilizing high-precision local legal document extractor engine.`);
+      logger.info(`[AI OCR] No active Gemini API key configured. Utilizing high-precision local legal document extractor engine.`, {
+        provider: 'local',
+        mimeType,
+        fileSizeBytes: fileBuffer?.length || 0,
+      });
     }
 
     // 2. Fallback: Local Extraction Engine
@@ -68,7 +83,19 @@ class AiOcrService {
     let lastError = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const attemptStart = Date.now();
       try {
+        console.log(
+          `[AI OCR TRACE] Gemini attempt ${attempt}/${maxRetries} START | model=${this.modelName} | mimeType=${mimeType} | fileSizeBytes=${fileBuffer?.length || 0}`
+        );
+        logger.info(`[AI OCR] Gemini request starting`, {
+          attempt,
+          mimeType,
+          fileSizeBytes: fileBuffer?.length || 0,
+          modelName: this.modelName,
+          provider: 'gemini',
+        });
+
         const model = this.genAI.getGenerativeModel({
           model: this.modelName,
           generationConfig: {
@@ -127,9 +154,9 @@ Strictly return valid JSON only.`;
         }
         parts.push({ text: prompt });
 
-        // Execute with 15s timeout
+        // Execute with 45s timeout (multimodal vision OCR on bilingual scans can take 20-35s)
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Gemini API timeout exceeded (15s)')), 15000)
+          setTimeout(() => reject(new Error('Gemini API timeout exceeded (45s)')), 45000)
         );
 
         const resultPromise = model.generateContent(parts);
@@ -137,9 +164,48 @@ Strictly return valid JSON only.`;
         const responseText = response.response.text();
 
         const parsed = JSON.parse(responseText);
-        return this._normalizeExtractionResult(parsed, this.modelName);
+        const normalized = this._normalizeExtractionResult(parsed, this.modelName);
+
+        const attemptDuration = Date.now() - attemptStart;
+        console.log(
+          `[AI OCR TRACE] Gemini attempt ${attempt}/${maxRetries} SUCCEEDED in ${attemptDuration}ms | textLength=${normalized?.rawText?.length || 0} | fields=${normalized?.fields?.length || 0} | classification=${normalized?.classification?.predictedType}`
+        );
+
+        logger.info(`[AI OCR] Gemini response received`, {
+          attempt,
+          textLength: typeof normalized?.rawText === 'string' ? normalized.rawText.length : 0,
+          fieldCount: Array.isArray(normalized?.fields) ? normalized.fields.length : 0,
+          classification: normalized?.classification?.predictedType,
+          confidence: normalized?.classification?.confidence,
+          provider: 'gemini',
+          mimeType,
+        });
+
+        return normalized;
       } catch (err) {
         lastError = err;
+        const attemptDuration = Date.now() - attemptStart;
+        console.log(
+          `[AI OCR TRACE] Gemini attempt ${attempt}/${maxRetries} FAILED after ${attemptDuration}ms | error=${err.message}`
+        );
+        logger.warn(`[AI OCR] Gemini request failed`, {
+          attempt,
+          errorMessage: err.message,
+          provider: 'gemini',
+          mimeType,
+          fileSizeBytes: fileBuffer?.length || 0,
+          modelName: this.modelName,
+        });
+
+        // Only retry on transient network/server errors (5xx, ECONNRESET, ETIMEDOUT).
+        // Do NOT retry on timeout (we already waited 45s) or JSON parse errors.
+        const isTransient = err.status >= 500 ||
+          err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT' || err.code === 'ENOTFOUND' ||
+          (err.message && err.message.includes('503'));
+        if (!isTransient) {
+          break;
+        }
+
         if (attempt < maxRetries) {
           const backoffMs = attempt * 1000;
           await new Promise((r) => setTimeout(r, backoffMs));
@@ -159,19 +225,53 @@ Strictly return valid JSON only.`;
     const isImage = mimeType.startsWith('image/') || (fileName && /\.(png|jpg|jpeg|tiff|tif|webp)$/i.test(fileName));
     const isDocx = mimeType.includes('officedocument') || (fileName && fileName.toLowerCase().endsWith('.docx'));
 
+    const getSafePreview = (text) => {
+      if (!text || !text.trim()) return '[EMPTY]';
+      const trimmed = text.trim();
+      const prefix = trimmed.slice(0, 30).replace(/[^\p{L}\p{N}\s]/gu, '?');
+      const suffix = trimmed.slice(-30).replace(/[^\p{L}\p{N}\s]/gu, '?');
+      return `${prefix}...[${suffix}]`;
+    };
+
+    const getScriptCategories = (text) => {
+      if (!text) return ['none'];
+      const categories = new Set();
+      for (const ch of text) {
+        if (/\p{Script=Latin}/u.test(ch)) categories.add('Latin');
+        if (/\p{Script=Malayalam}/u.test(ch)) categories.add('Malayalam');
+        if (/\p{Script=Devanagari}/u.test(ch)) categories.add('Devanagari');
+        if (/\p{Script=Arabic}/u.test(ch)) categories.add('Arabic');
+        if (/\p{Script=Hangul}/u.test(ch)) categories.add('Hangul');
+        if (/\p{Script=Han}/u.test(ch)) categories.add('Han');
+      }
+      return categories.size ? Array.from(categories) : ['unknown'];
+    };
+
+    const isTextualPayload = (buffer) => {
+      if (!buffer || buffer.length === 0) return false;
+      const sample = buffer.subarray(0, 512);
+      if (sample.includes(0)) return false;
+      const utf8Text = sample.toString('utf8');
+      if (!utf8Text || utf8Text.trim().length < 8) return false;
+      const printableChars = [...utf8Text].filter((ch) => ch === '\n' || ch === '\r' || ch === '\t' || ch === ' ' || /[\p{L}\p{N}\p{P}\p{S}]/u.test(ch)).length;
+      return printableChars / utf8Text.length > 0.9 && /[\p{L}\p{N}]/u.test(utf8Text);
+    };
+
     try {
       if (isPdf) {
-        const pdfData = await pdfParse(fileBuffer);
+        const parser = new PDFParse({ data: fileBuffer });
+        const pdfData = await parser.getText();
         if (pdfData && pdfData.text && pdfData.text.trim().length > 0) {
           extractedText = pdfData.text.trim();
         }
+        await parser.destroy();
       }
     } catch (err) {
       logger.warn(`[AI OCR] PDF text extraction unavailable for ${fileName}`, { error: err.message });
       extractedText = '';
     }
 
-    if (!extractedText && isImage) {
+    if (!extractedText && isImage && !isTextualPayload(fileBuffer)) {
       logger.warn(`[AI OCR] Image document ${fileName} does not contain machine-readable text; requiring human review for OCR fallback.`, { mimeType });
       extractedText = '';
     }
@@ -183,8 +283,8 @@ Strictly return valid JSON only.`;
 
     if (!extractedText && fileBuffer && fileBuffer.length > 0) {
       const candidateText = fileBuffer.toString('utf8');
-      const looksTextual = candidateText && candidateText.trim().length > 0 && /[A-Za-z0-9]/.test(candidateText);
-      if (looksTextual) {
+      const looksTextual = candidateText && candidateText.trim().length > 0 && /[\p{L}\p{N}]/u.test(candidateText);
+      if (looksTextual && isTextualPayload(fileBuffer)) {
         extractedText = candidateText;
       }
     }
@@ -193,11 +293,30 @@ Strictly return valid JSON only.`;
     const classification = this._classifyText(cleanText || '', fileName, documentTypeHint);
     const fields = cleanText ? this._extractFieldsByRule(cleanText, classification.predictedType, fileName) : [];
 
+    const validity = this._hasMeaningfulLegalStructure(cleanText || '');
+    const validityReason = validity ? 'valid-legal-content' : (cleanText ? 'insufficient-legal-structure' : 'empty-text');
+
     let totalConf = 0;
     fields.forEach((f) => {
       totalConf += f.confidence;
     });
     const avgConfidence = fields.length > 0 ? parseFloat((totalConf / fields.length).toFixed(2)) : 0.15;
+
+    logger.info(`[AI OCR] Local fallback final result`, {
+      mimeType,
+      fileSizeBytes: fileBuffer?.length || 0,
+      provider: 'local',
+      textLength: cleanText.length,
+      preview: getSafePreview(cleanText),
+      scriptCategories: getScriptCategories(cleanText),
+      contentValid: validity,
+      validityReason,
+      classification: classification?.predictedType,
+      classificationConfidence: classification?.confidence,
+      fieldCount: fields.length,
+      finalConfidence: avgConfidence,
+      needsHumanReview: !cleanText || avgConfidence < 0.6,
+    });
 
     return {
       rawText: cleanText,
@@ -214,10 +333,44 @@ Strictly return valid JSON only.`;
     };
   }
 
+  _hasMeaningfulLegalStructure(text) {
+    const normalized = (text || '').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!normalized || normalized.length < 20) {
+      return false;
+    }
+
+    const letterWords = (normalized.match(/\p{L}[\p{L}\p{M}'’.-]*/gu) || []).filter((word) => word.length >= 2);
+    const totalWords = normalized.split(/\s+/).filter(Boolean).length;
+
+    if (letterWords.length < 8 || totalWords === 0) {
+      return false;
+    }
+
+    const letterDensity = letterWords.length / totalWords;
+    const legalMarkers = [
+      'first information report', 'fir', 'police station', 'complainant', 'informant', 'accused',
+      'suspect', 'statement', 'witness', 'chargesheet', 'evidence', 'forensic', 'laboratory',
+      'examination', 'report', 'incident', 'section', 'under section', 'case number', 'court',
+    ];
+    const lower = normalized.toLowerCase();
+    const hitCount = legalMarkers.filter((marker) => lower.includes(marker)).length;
+
+    return letterDensity >= 0.7 && (hitCount >= 1 || letterWords.length >= 12);
+  }
+
   /**
    * Heuristic Document Classifier using legal vocabulary and structural markers
    */
   _classifyText(text, fileName, hint) {
+    if (!this._hasMeaningfulLegalStructure(text)) {
+      return {
+        predictedType: 'unknown',
+        confidence: 0.0,
+        reasoning: 'Document text does not contain a valid legal document structure or sufficient semantic evidence for case classification.',
+        classifiedAt: new Date(),
+      };
+    }
+
     const lower = `${text} ${fileName || ''} ${hint || ''}`.toLowerCase();
 
     const scores = {
@@ -277,6 +430,10 @@ Strictly return valid JSON only.`;
    * Rule-based Field Extractor tailored to each specific legal document schema
    */
   _extractFieldsByRule(text, documentType, fileName) {
+    if (!this._hasMeaningfulLegalStructure(text)) {
+      return [];
+    }
+
     const fields = [];
 
     // Helper regex extractors (returns match and exact matched position if found)

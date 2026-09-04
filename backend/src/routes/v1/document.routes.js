@@ -44,7 +44,19 @@ router.get(
 router.post(
   '/',
   requireRole(ROLES.OFFICER, ROLES.ADMIN),
+  (req, res, next) => {
+    req._requestStartedAt = Date.now();
+    console.log('[TIMING] 1. request received | elapsedMs=0');
+    next();
+  },
   handleSingleUpload('file'),
+  (req, res, next) => {
+    const elapsedMs = Date.now() - (req._requestStartedAt || Date.now());
+    console.log(
+      `[TIMING] 2. multer/file parsing complete | elapsedMs=${elapsedMs} | mimeType=${req.file?.mimetype} | fileSizeBytes=${req.file?.size}`
+    );
+    next();
+  },
   validateUploadDocument,
   asyncWrapper(uploadDocument)
 );

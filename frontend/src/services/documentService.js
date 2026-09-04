@@ -11,6 +11,7 @@ export const documentService = {
 
   uploadDocument: async (formData, onProgress) => {
     return api.post('/documents', formData, {
+      timeout: 60000, // Document ingestion includes Gemini Vision OCR (~30s for bilingual scans)
       headers: {
         'Content-Type': 'multipart/form-data',
       },

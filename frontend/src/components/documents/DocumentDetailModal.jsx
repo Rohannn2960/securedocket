@@ -73,8 +73,26 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
       setActiveFieldEdit(null);
       setShowVerifyConfirm(false);
       setShowFlagModal(false);
+
+      const docId = document._id || document.id;
+      if (docId && isOpen) {
+        documentService
+          .getDocumentById(docId)
+          .then((res) => {
+            const fetched = res.data?.document || res.data;
+            if (fetched) {
+              setDocData((prev) => ({
+                ...(prev || {}),
+                ...fetched,
+              }));
+            }
+          })
+          .catch((err) => {
+            console.warn('Could not refresh full document details in modal:', err);
+          });
+      }
     }
-  }, [document]);
+  }, [document, isOpen]);
 
   if (!isOpen || !docData) return null;
 
@@ -82,7 +100,11 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
   const extractedFields = docData.extractedFields || {};
   const classification = docData.classification || {};
   const ocrMetadata = docData.ocrMetadata || {};
-  const avgConfidence = ocrMetadata.averageConfidence ? Math.round(ocrMetadata.averageConfidence * 100) : (docData.ocrConfidence || 85);
+  const avgConfidence = ocrMetadata.averageConfidence
+    ? Math.round(ocrMetadata.averageConfidence * 100)
+    : docData.ocrConfidence
+    ? Math.round(docData.ocrConfidence <= 1 ? docData.ocrConfidence * 100 : docData.ocrConfidence)
+    : 85;
 
   const getConfidenceBadge = (confidence) => {
     const score = typeof confidence === 'number' ? (confidence <= 1 ? Math.round(confidence * 100) : confidence) : 85;
@@ -478,7 +500,13 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-cyan-400" />
               <h4 className="text-xs font-bold text-slate-200 uppercase font-mono">
-                AI Field Extraction ({docData.documentType?.toUpperCase()} Schema)
+                {(() => {
+                  const predicted = docData.classification?.predictedType || docData.documentType;
+                  if (!predicted || predicted === 'unknown') {
+                    return 'AI Field Extraction';
+                  }
+                  return `AI Field Extraction (${String(predicted).toUpperCase()} Schema)`;
+                })()}
               </h4>
             </div>
             <div className="flex items-center gap-2">
@@ -696,10 +724,10 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
             <div className="p-3 rounded-xl bg-defense-900/60 border border-slate-800 space-y-1">
               <span className="text-[10px] text-slate-500 font-mono uppercase block">Identified Persons</span>
               <div className="text-xs text-slate-200 font-medium space-y-0.5">
-                {extractedFields.accusedName?.value || extractedFields.complainantName?.value || extractedFields.witnessName?.value || extractedFields.personName?.value ? (
+                {extractedFields.accused?.value || extractedFields.accusedName?.value || extractedFields.complainant?.value || extractedFields.complainantName?.value || extractedFields.witnessName?.value || extractedFields.personName?.value ? (
                   <>
-                    {extractedFields.accusedName?.value && <div>• Accused: {String(extractedFields.accusedName.value)}</div>}
-                    {extractedFields.complainantName?.value && <div>• Complainant: {String(extractedFields.complainantName.value)}</div>}
+                    {(extractedFields.accused?.value || extractedFields.accusedName?.value) && <div>• Accused: {String(extractedFields.accused?.value || extractedFields.accusedName?.value)}</div>}
+                    {(extractedFields.complainant?.value || extractedFields.complainantName?.value) && <div>• Complainant: {String(extractedFields.complainant?.value || extractedFields.complainantName?.value)}</div>}
                     {extractedFields.witnessName?.value && <div>• Witness: {String(extractedFields.witnessName.value)}</div>}
                   </>
                 ) : (
@@ -712,8 +740,8 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
             <div className="p-3 rounded-xl bg-defense-900/60 border border-slate-800 space-y-1">
               <span className="text-[10px] text-slate-500 font-mono uppercase block">Crime Scenes & Locations</span>
               <div className="text-xs text-slate-200 font-medium">
-                {extractedFields.placeOfOccurrence?.value || extractedFields.location?.value || extractedFields.address?.value ? (
-                  <div>• {String(extractedFields.placeOfOccurrence?.value || extractedFields.location?.value || extractedFields.address?.value)}</div>
+                {extractedFields.incidentLocation?.value || extractedFields.placeOfOccurrence?.value || extractedFields.policeStation?.value || extractedFields.location?.value || extractedFields.address?.value ? (
+                  <div>• {String(extractedFields.incidentLocation?.value || extractedFields.placeOfOccurrence?.value || extractedFields.policeStation?.value || extractedFields.location?.value || extractedFields.address?.value)}</div>
                 ) : (
                   <span className="text-slate-500 italic">No specific location extracted</span>
                 )}
@@ -724,8 +752,8 @@ export function DocumentDetailModal({ isOpen, onClose, document, onUpdated }) {
             <div className="p-3 rounded-xl bg-defense-900/60 border border-slate-800 space-y-1">
               <span className="text-[10px] text-slate-500 font-mono uppercase block">Physical & Forensic Tags</span>
               <div className="text-xs text-slate-200 font-medium">
-                {extractedFields.firNumber?.value || extractedFields.exhibitNumber?.value || extractedFields.seizedItems?.value ? (
-                  <div>• {String(extractedFields.firNumber?.value || extractedFields.exhibitNumber?.value || extractedFields.seizedItems?.value)}</div>
+                {extractedFields.firNumber?.value || extractedFields.sections?.value || extractedFields.exhibitNumber?.value || extractedFields.seizedItems?.value ? (
+                  <div>• {String(extractedFields.firNumber?.value || extractedFields.sections?.value || extractedFields.exhibitNumber?.value || extractedFields.seizedItems?.value)}</div>
                 ) : (
                   <span className="text-slate-500 italic">Standard case exhibit</span>
                 )}
