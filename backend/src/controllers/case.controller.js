@@ -149,6 +149,16 @@ async function getCaseEntities(req, res) {
   });
 }
 
+async function getCaseRelationships(req, res) {
+  const { id } = req.params;
+  const relationships = await intelligenceService.getCaseRelationships(id, req.user);
+
+  return ApiResponse.success(res, {
+    message: 'Case-to-case relationship intelligence compiled successfully',
+    data: relationships,
+  });
+}
+
 module.exports = {
   getCases,
   getCase,
@@ -160,4 +170,5 @@ module.exports = {
   getCaseIntelligence,
   getCaseTimeline,
   getCaseEntities,
+  getCaseRelationships,
 };

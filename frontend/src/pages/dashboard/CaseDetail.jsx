@@ -24,6 +24,9 @@ import {
   Eye,
   RefreshCw,
   HelpCircle,
+  Share2,
+  ExternalLink,
+  ShieldAlert,
 } from 'lucide-react';
 import { Card } from '../../components/common/Card';
 import { Badge } from '../../components/common/Badge';
@@ -349,6 +352,23 @@ export function CaseDetail() {
           {intelData?.summary?.totalEntities > 0 && (
             <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300">
               {intelData.summary.totalEntities}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('relationships')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+            activeTab === 'relationships'
+              ? 'bg-purple-950/80 text-purple-300 border border-purple-500/40 shadow-glow-purple'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-defense-900/60'
+          }`}
+        >
+          <Share2 className="w-3.5 h-3.5 text-purple-400" />
+          Cross-Case Similarity
+          {intelData?.summary?.totalRelatedCases > 0 && (
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300">
+              {intelData.summary.totalRelatedCases}
             </span>
           )}
         </button>
@@ -824,6 +844,172 @@ export function CaseDetail() {
                     </div>
                   </div>
                 ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 4: CROSS-CASE SIMILARITY & RELATIONSHIP INTELLIGENCE */}
+      {activeTab === 'relationships' && (
+        <div className="space-y-6">
+          {/* Decision-Support & Authenticity Protocol Banner */}
+          <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-800/40 space-y-2">
+            <div className="flex items-center gap-2 text-xs font-bold text-purple-300">
+              <ShieldAlert className="w-4 h-4 text-purple-400 shrink-0" />
+              <span>AI INVESTIGATIVE DECISION-SUPPORT PROTOCOL</span>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Potential case relationships and similarity scores are AI-assisted analytical aids computed from authorized case profile signals (extracted entities, locations, legal statutes, and document semantics). They do <strong className="text-purple-300 font-semibold">NOT</strong> represent factual or legal proof of real-world connection and remain subject to independent investigator review.
+            </p>
+            <div className="flex items-center gap-4 text-[11px] font-mono text-slate-400 pt-1 border-t border-purple-900/40">
+              <span>Threshold: ≥ 25% Relevance Score</span>
+              <span>•</span>
+              <span>Scope: Strictly authorized cases</span>
+              <span>•</span>
+              <span>Deterministic Multi-Signal Engine</span>
+            </div>
+          </div>
+
+          {intelLoading ? (
+            <div className="py-12 text-center text-xs text-slate-400">
+              <Spinner size="md" className="mx-auto mb-3" />
+              Computing multi-signal case profile similarities across authorized cases...
+            </div>
+          ) : !intelData?.relationships || intelData.relationships.length === 0 ? (
+            <div className="py-12 text-center text-xs text-slate-400 space-y-2 rounded-2xl bg-defense-900/40 border border-slate-800">
+              <Share2 className="w-8 h-8 text-slate-600 mx-auto" />
+              <div className="font-semibold text-slate-300">No Potentially Related Cases Discovered</div>
+              <p className="text-[11px] text-slate-500 max-w-md mx-auto">
+                No authorized candidate cases meet or exceed the documented relevance threshold (≥ 25%) based on current shared entities, locations, legal statutes, or semantic vectors.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>
+                  Showing <strong className="text-slate-200">{intelData.relationships.length}</strong> potentially related candidate case{intelData.relationships.length === 1 ? '' : 's'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4">
+                {intelData.relationships.map((rel, idx) => (
+                  <div
+                    key={idx}
+                    className="p-5 rounded-2xl bg-defense-900/80 border border-slate-800/80 hover:border-purple-500/40 transition-all space-y-4"
+                  >
+                    {/* Header with Case Info & Similarity Score */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Link
+                            to={`/cases/${rel.targetCaseId}`}
+                            className="text-sm font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1.5"
+                          >
+                            <span>{rel.caseNumber}</span>
+                            <ExternalLink className="w-3.5 h-3.5 text-cyan-400" />
+                          </Link>
+                          <Badge variant="default" size="xs">
+                            {rel.status?.replace('_', ' ').toUpperCase()}
+                          </Badge>
+                          {rel.jurisdiction && (
+                            <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-slate-500" />
+                              {rel.jurisdiction}
+                            </span>
+                          )}
+                        </div>
+                        <h4 className="text-sm font-medium text-slate-200">{rel.title}</h4>
+                      </div>
+
+                      {/* Similarity Badge & Confidence */}
+                      <div className="flex sm:flex-col items-center sm:items-end justify-between gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-base font-bold font-mono ${
+                            rel.similarityPercentage >= 70 ? 'text-emerald-400' :
+                            rel.similarityPercentage >= 45 ? 'text-amber-400' : 'text-purple-400'
+                          }`}>
+                            {rel.similarityPercentage}%
+                          </span>
+                          <Badge
+                            variant={
+                              rel.confidenceLevel === 'high' ? 'verified' :
+                              rel.confidenceLevel === 'medium' ? 'pending' : 'default'
+                            }
+                            size="xs"
+                          >
+                            {rel.relationshipType?.replace('_', ' ').toUpperCase()}
+                          </Badge>
+                        </div>
+                        <span className="text-[10px] font-mono text-slate-500">
+                          Confidence: {rel.confidenceLevel.toUpperCase()}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Explainable Signals / Reasons */}
+                    {rel.reasons?.length > 0 && (
+                      <div className="p-3 rounded-xl bg-defense-950/70 border border-slate-800/80 space-y-1.5">
+                        <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold block">
+                          Intelligence Signals & Correlation Reasons:
+                        </span>
+                        <ul className="space-y-1">
+                          {rel.reasons.map((reason, rIdx) => (
+                            <li key={rIdx} className="text-xs text-slate-300 flex items-start gap-2">
+                              <span className="text-purple-400 font-bold mt-0.5">•</span>
+                              <span>{reason}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Breakdown Badges */}
+                    <div className="flex flex-wrap gap-4 pt-1 text-xs">
+                      {rel.sharedEntities?.length > 0 && (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] font-mono text-slate-500">Entities:</span>
+                          {rel.sharedEntities.map((ent, eIdx) => (
+                            <span
+                              key={eIdx}
+                              className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-950/60 text-purple-300 border border-purple-800/50"
+                            >
+                              {ent.toUpperCase()}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {rel.sharedLocations?.length > 0 && (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] font-mono text-slate-500">Locations:</span>
+                          {rel.sharedLocations.map((loc, lIdx) => (
+                            <span
+                              key={lIdx}
+                              className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-950/60 text-blue-300 border border-blue-800/50"
+                            >
+                              {loc.toUpperCase()}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {rel.sharedSections?.length > 0 && (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] font-mono text-slate-500">Legal Sections:</span>
+                          {rel.sharedSections.map((sec, sIdx) => (
+                            <span
+                              key={sIdx}
+                              className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-800/50"
+                            >
+                              {sec.toUpperCase()}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

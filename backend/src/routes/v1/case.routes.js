@@ -10,6 +10,7 @@ const {
   getCaseIntelligence,
   getCaseTimeline,
   getCaseEntities,
+  getCaseRelationships,
 } = require('../../controllers/case.controller');
 const { requireAuth } = require('../../middleware/auth.middleware');
 const { requireRole } = require('../../middleware/rbac.middleware');
@@ -101,6 +102,14 @@ router.get(
   validateCaseIdParam,
   requireRole(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN, ROLES.AUDITOR),
   asyncWrapper(getCaseEntities)
+);
+
+// GET /api/v1/cases/:id/relationships (Case-to-case similarity & relationship intelligence)
+router.get(
+  '/:id/relationships',
+  validateCaseIdParam,
+  requireRole(ROLES.OFFICER, ROLES.VERIFIER, ROLES.ADMIN, ROLES.AUDITOR),
+  asyncWrapper(getCaseRelationships)
 );
 
 // POST /api/v1/cases/:id/officers (Assign personnel to case)

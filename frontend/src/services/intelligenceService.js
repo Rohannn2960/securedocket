@@ -24,6 +24,14 @@ export const intelligenceService = {
   getCaseEntities: async (caseId) => {
     return api.get(`/cases/${caseId}/entities`);
   },
+
+  /**
+   * Get case-to-case similarity and relationship intelligence
+   * @param {string} caseId
+   */
+  getCaseRelationships: async (caseId) => {
+    return api.get(`/cases/${caseId}/relationships`);
+  },
 };
 
 export default intelligenceService;

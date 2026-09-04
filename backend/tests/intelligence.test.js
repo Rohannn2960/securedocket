@@ -340,4 +340,263 @@ describe('Phase 8: Case Intelligence - Timeline & Entity Linking Engine', () => 
       expect(adminRes.summary).toBeDefined();
     });
   });
+
+  describe('5. Case-to-Case Similarity & Relationship Intelligence', () => {
+    it('should calculate very high similarity for identical case representations and low similarity for unrelated cases', () => {
+      const baseProfile = {
+        caseId: 'case_1',
+        caseNumber: 'CR/001',
+        title: 'Cyber Fraud Investigation',
+        jurisdiction: 'Bangalore City',
+        status: 'under_investigation',
+        personEntities: new Set(['ravi kumar', 'ananya roy']),
+        orgEntities: new Set(['axis bank']),
+        locationEntities: new Set(['mg road', 'koramangala']),
+        legalSections: new Set(['ipc 420', 'it act 66d']),
+        embeddingVectors: [[0.5, 0.5, 0.5]],
+      };
+
+      const identicalProfile = {
+        caseId: 'case_2',
+        caseNumber: 'CR/002',
+        title: 'Parallel Cyber Investigation',
+        jurisdiction: 'Bangalore City',
+        status: 'under_investigation',
+        personEntities: new Set(['ravi kumar', 'ananya roy']),
+        orgEntities: new Set(['axis bank']),
+        locationEntities: new Set(['mg road', 'koramangala']),
+        legalSections: new Set(['ipc 420', 'it act 66d']),
+        embeddingVectors: [[0.5, 0.5, 0.5]],
+      };
+
+      const unrelatedProfile = {
+        caseId: 'case_3',
+        caseNumber: 'CR/003',
+        title: 'Maritime Poaching Incident',
+        jurisdiction: 'Cochin Harbour',
+        status: 'open',
+        personEntities: new Set(['george varghese']),
+        orgEntities: new Set(['fisheries board']),
+        locationEntities: new Set(['mattancherry']),
+        legalSections: new Set(['wildlife act 9']),
+        embeddingVectors: [[-0.5, -0.5, -0.5]],
+      };
+
+      const identicalResult = intelligenceService.calculateProfileSimilarity(baseProfile, identicalProfile);
+      expect(identicalResult.similarityScore).toBeGreaterThanOrEqual(0.90);
+      expect(identicalResult.confidenceLevel).toBe('high');
+      expect(identicalResult.relationshipType).toBe('strongly_related');
+      expect(identicalResult.reasons.length).toBeGreaterThan(0);
+
+      const unrelatedResult = intelligenceService.calculateProfileSimilarity(baseProfile, unrelatedProfile);
+      expect(unrelatedResult.similarityScore).toBe(0);
+      expect(unrelatedResult.confidenceLevel).toBe('low');
+      expect(unrelatedResult.reasons.length).toBe(0);
+    });
+
+    it('should demonstrate that individual signals (entity, location, section, semantic) increase similarity and provide explainable reasons', () => {
+      const base = {
+        personEntities: new Set(['suspect x']),
+        orgEntities: new Set(),
+        locationEntities: new Set(['indiranagar']),
+        legalSections: new Set(['ipc 379']),
+        embeddingVectors: [],
+      };
+
+      // Case with no overlap
+      const noOverlap = {
+        personEntities: new Set(['someone else']),
+        orgEntities: new Set(),
+        locationEntities: new Set(['whitefield']),
+        legalSections: new Set(['ipc 302']),
+        embeddingVectors: [],
+      };
+      const scoreZero = intelligenceService.calculateProfileSimilarity(base, noOverlap);
+      expect(scoreZero.similarityScore).toBe(0);
+
+      // Shared entity only
+      const sharedEntity = {
+        personEntities: new Set(['suspect x']),
+        orgEntities: new Set(),
+        locationEntities: new Set(['whitefield']),
+        legalSections: new Set(['ipc 302']),
+        embeddingVectors: [],
+      };
+      const scoreEntity = intelligenceService.calculateProfileSimilarity(base, sharedEntity);
+      expect(scoreEntity.similarityScore).toBeGreaterThan(0);
+      expect(scoreEntity.reasons.some((r) => r.includes('Shared entity reference'))).toBe(true);
+
+      // Shared location only
+      const sharedLocation = {
+        personEntities: new Set(['someone else']),
+        orgEntities: new Set(),
+        locationEntities: new Set(['indiranagar']),
+        legalSections: new Set(['ipc 302']),
+        embeddingVectors: [],
+      };
+      const scoreLocation = intelligenceService.calculateProfileSimilarity(base, sharedLocation);
+      expect(scoreLocation.similarityScore).toBeGreaterThan(0);
+      expect(scoreLocation.reasons.some((r) => r.includes('Shared location'))).toBe(true);
+
+      // Shared legal section only
+      const sharedSection = {
+        personEntities: new Set(['someone else']),
+        orgEntities: new Set(),
+        locationEntities: new Set(['whitefield']),
+        legalSections: new Set(['ipc 379']),
+        embeddingVectors: [],
+      };
+      const scoreSection = intelligenceService.calculateProfileSimilarity(base, sharedSection);
+      expect(scoreSection.similarityScore).toBeGreaterThan(0);
+      expect(scoreSection.reasons.some((r) => r.includes('Matching legal statute'))).toBe(true);
+
+      // Semantic vectors only
+      const baseWithVector = {
+        ...base,
+        embeddingVectors: [[1, 0, 0]],
+      };
+      const matchingVector = {
+        ...noOverlap,
+        embeddingVectors: [[1, 0, 0]],
+      };
+      const scoreVector = intelligenceService.calculateProfileSimilarity(baseWithVector, matchingVector);
+      expect(scoreVector.similarityScore).toBeGreaterThan(0);
+      expect(scoreVector.reasons.some((r) => r.includes('High semantic similarity'))).toBe(true);
+    });
+
+    it('should be strictly deterministic across repeated runs', () => {
+      const profileA = {
+        personEntities: new Set(['john doe']),
+        orgEntities: new Set(['acme corp']),
+        locationEntities: new Set(['mumbai']),
+        legalSections: new Set(['ipc 420']),
+        embeddingVectors: [[0.3, 0.4, 0.5]],
+      };
+      const profileB = {
+        personEntities: new Set(['john doe']),
+        orgEntities: new Set(),
+        locationEntities: new Set(['mumbai']),
+        legalSections: new Set(['ipc 420']),
+        embeddingVectors: [[0.3, 0.4, 0.5]],
+      };
+
+      const run1 = intelligenceService.calculateProfileSimilarity(profileA, profileB);
+      const run2 = intelligenceService.calculateProfileSimilarity(profileA, profileB);
+
+      expect(run1.similarityScore).toBe(run2.similarityScore);
+      expect(run1.confidenceLevel).toBe(run2.confidenceLevel);
+      expect(run1.relationshipType).toBe(run2.relationshipType);
+      expect(run1.reasons).toEqual(run2.reasons);
+    });
+
+    it('should handle empty or missing embeddings without crashing', () => {
+      const profileEmptyVectors = {
+        personEntities: new Set(['entity a']),
+        orgEntities: new Set(),
+        locationEntities: new Set(['city b']),
+        legalSections: new Set(['section c']),
+        embeddingVectors: [],
+      };
+      const profileNullVectors = {
+        personEntities: new Set(['entity a']),
+        orgEntities: new Set(),
+        locationEntities: new Set(['city b']),
+        legalSections: new Set(['section c']),
+        embeddingVectors: [],
+      };
+
+      expect(() => {
+        const result = intelligenceService.calculateProfileSimilarity(profileEmptyVectors, profileNullVectors);
+        expect(result.similarityScore).toBeGreaterThan(0);
+      }).not.toThrow();
+    });
+
+    it('should enforce strict server-side RBAC: Officer cannot discover unassigned cases through similarity', async () => {
+      // Create Case C assigned to Officer
+      const caseC = await Case.create({
+        caseNumber: 'CR/2026/0101-BLR',
+        title: 'Case C - Assigned to Officer',
+        status: 'under_investigation',
+        leadOfficer: officerUser._id,
+        assignedOfficers: [officerUser._id],
+      });
+
+      // Case A document with person "Mohan Lal"
+      await Document.create({
+        caseId: caseA._id,
+        title: 'Case A FIR',
+        documentType: 'FIR',
+        s3Key: 'key_a_fir',
+        s3Bucket: 'test-bucket',
+        fileName: 'a_fir.pdf',
+        originalName: 'a_fir.pdf',
+        fileSize: 1024,
+        mimeType: 'application/pdf',
+        uploadedBy: officerUser._id,
+        sha256Hash: '4'.repeat(64),
+        extractedFields: {
+          person_name: { value: 'Mohan Lal', confidence: 0.95 },
+          legal_section: { value: 'IPC 420', confidence: 0.95 },
+        },
+      });
+
+      // Case B (NOT assigned to Officer, owned by Admin) has the SAME person and section
+      await Document.create({
+        caseId: caseB._id,
+        title: 'Case B Charge Sheet',
+        documentType: 'chargesheet',
+        s3Key: 'key_b_cs',
+        s3Bucket: 'test-bucket',
+        fileName: 'b_cs.pdf',
+        originalName: 'b_cs.pdf',
+        fileSize: 1024,
+        mimeType: 'application/pdf',
+        uploadedBy: adminUser._id,
+        sha256Hash: '5'.repeat(64),
+        extractedFields: {
+          person_name: { value: 'Mohan Lal', confidence: 0.95 },
+          legal_section: { value: 'IPC 420', confidence: 0.95 },
+        },
+      });
+
+      // Case C (Assigned to Officer) also has the SAME person and section
+      await Document.create({
+        caseId: caseC._id,
+        title: 'Case C Statement',
+        documentType: 'statement',
+        s3Key: 'key_c_stmt',
+        s3Bucket: 'test-bucket',
+        fileName: 'c_stmt.pdf',
+        originalName: 'c_stmt.pdf',
+        fileSize: 1024,
+        mimeType: 'application/pdf',
+        uploadedBy: officerUser._id,
+        sha256Hash: '6'.repeat(64),
+        extractedFields: {
+          person_name: { value: 'Mohan Lal', confidence: 0.95 },
+          legal_section: { value: 'IPC 420', confidence: 0.95 },
+        },
+      });
+
+      // 1. Officer queries relationships for Case A
+      const officerRelations = await intelligenceService.getCaseRelationships(caseA._id, officerUser);
+
+      // Officer must ONLY see Case C, NOT Case B (Case B is unauthorized!)
+      const targetCaseIds = officerRelations.relationships.map((r) => r.targetCaseId.toString());
+      expect(targetCaseIds).toContain(caseC._id.toString());
+      expect(targetCaseIds).not.toContain(caseB._id.toString());
+
+      // 2. Admin queries relationships for Case A
+      // Admin is authorized across cases, so Admin should see both Case B and Case C
+      const adminRelations = await intelligenceService.getCaseRelationships(caseA._id, adminUser);
+      const adminTargetIds = adminRelations.relationships.map((r) => r.targetCaseId.toString());
+      expect(adminTargetIds).toContain(caseB._id.toString());
+      expect(adminTargetIds).toContain(caseC._id.toString());
+
+      // 3. Officer attempts to query relationships for Case B (unauthorized target) -> Must throw 403
+      await expect(
+        intelligenceService.getCaseRelationships(caseB._id, officerUser)
+      ).rejects.toThrow(/Access forbidden/);
+    });
+  });
 });

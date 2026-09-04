@@ -5,6 +5,7 @@ const { ROLES } = require('../constants/roles');
 const { decryptDocumentFields } = require('../utils/crypto');
 const config = require('../config/env');
 const logger = require('../config/logger');
+const vectorService = require('./vector.service');
 
 // Common Indian / legal honorifics and prefixes to strip for normalization
 const HONORIFICS_REGEX = /^(shri|smt|mr|mrs|ms|dr|adv|advocate|insp|inspector|si|sub-inspector|asi|constable|officer|sh\.)\s+/i;
@@ -400,12 +401,285 @@ class IntelligenceService {
   }
 
   /**
-   * 3. COMBINED CASE INTELLIGENCE
+   * 3. CASE PROFILE EXTRACTOR
+   * Extracts deterministic representation (entities, locations, legal sections, vectors)
+   */
+  async buildCaseProfile(caseId) {
+    const caseDoc = await Case.findById(caseId).lean();
+    if (!caseDoc) return null;
+
+    const documents = await this.getDecryptedCaseDocuments(caseId);
+
+    const personEntities = new Set();
+    const orgEntities = new Set();
+    const locationEntities = new Set();
+    const legalSections = new Set();
+    const embeddingVectors = [];
+
+    // Jurisdiction as a baseline location signal
+    if (caseDoc.jurisdiction) {
+      locationEntities.add(getCanonicalKey(caseDoc.jurisdiction));
+    }
+
+    for (const doc of documents) {
+      const fields = doc.extractedFields || {};
+
+      // Embeddings
+      if (Array.isArray(doc.embeddingVector) && doc.embeddingVector.length > 0) {
+        embeddingVectors.push(doc.embeddingVector);
+      }
+
+      // Person entities
+      const personFields = [
+        fields.accused,
+        fields.accusedName,
+        fields.complainant,
+        fields.complainantName,
+        fields.witness,
+        fields.witnessName,
+        fields.person_name,
+        fields.personName,
+      ];
+      for (const pf of personFields) {
+        const val = pf?.value;
+        if (typeof val === 'string' && val.trim().length > 2) {
+          const norm = normalizeEntityName(val);
+          if (norm.length > 2 && norm.toLowerCase() !== 'unknown' && !norm.toLowerCase().includes('not specified')) {
+            personEntities.add(getCanonicalKey(norm));
+          }
+        }
+      }
+
+      // Organization entities
+      const orgFields = [fields.organization, fields.laboratory, fields.bank];
+      for (const of_ of orgFields) {
+        const val = of_?.value;
+        if (typeof val === 'string' && val.trim().length > 2) {
+          const norm = normalizeEntityName(val);
+          if (norm.length > 2) orgEntities.add(getCanonicalKey(norm));
+        }
+      }
+
+      // Location entities
+      const locFields = [fields.incidentLocation, fields.placeOfOccurrence, fields.policeStation, fields.location, fields.address];
+      for (const lf of locFields) {
+        const val = lf?.value;
+        if (typeof val === 'string' && val.trim().length > 2) {
+          const norm = normalizeEntityName(val);
+          if (norm.length > 2) locationEntities.add(getCanonicalKey(norm));
+        }
+      }
+
+      // Legal sections & acts
+      const secFields = [fields.sections, fields.sections_laws, fields.act, fields.acts];
+      for (const sf of secFields) {
+        const val = sf?.value;
+        if (typeof val === 'string' && val.trim().length > 1) {
+          const tokens = val.split(/[,;\n]+/).map((t) => t.trim()).filter(Boolean);
+          for (const t of tokens) {
+            legalSections.add(t.toLowerCase().replace(/section\s*/i, 'sec '));
+          }
+        }
+      }
+    }
+
+    return {
+      caseId: caseDoc._id.toString(),
+      caseNumber: caseDoc.caseNumber,
+      title: caseDoc.title,
+      jurisdiction: caseDoc.jurisdiction,
+      status: caseDoc.status,
+      personEntities,
+      orgEntities,
+      locationEntities,
+      legalSections,
+      embeddingVectors,
+      documentsCount: documents.length,
+    };
+  }
+
+  /**
+   * 4. MULTI-SIGNAL SIMILARITY CALCULATION
+   * Computes explainable, deterministic similarity score between two case profiles
+   */
+  calculateProfileSimilarity(profileA, profileB) {
+    const reasons = [];
+    const sharedEntities = [];
+    const sharedLocations = [];
+    const sharedSections = [];
+
+    const getIntersection = (setA, setB) => {
+      const common = [];
+      for (const item of setA) {
+        if (setB.has(item)) common.push(item);
+      }
+      return common;
+    };
+
+    // 1. Shared Entities (Persons & Organizations) - Weight 0.35
+    const commonPersons = getIntersection(profileA.personEntities, profileB.personEntities);
+    const commonOrgs = getIntersection(profileA.orgEntities, profileB.orgEntities);
+    const allCommonEntities = [...commonPersons, ...commonOrgs];
+
+    let entityScore = 0;
+    if (allCommonEntities.length > 0) {
+      const totalUnique = new Set([
+        ...profileA.personEntities,
+        ...profileB.personEntities,
+        ...profileA.orgEntities,
+        ...profileB.orgEntities,
+      ]).size;
+      entityScore = Math.min(1.0, (allCommonEntities.length * 2) / (totalUnique || 1));
+
+      for (const ent of allCommonEntities) {
+        sharedEntities.push(ent);
+        reasons.push(`Shared entity reference: "${ent.toUpperCase()}"`);
+      }
+    }
+
+    // 2. Shared Locations & Jurisdiction - Weight 0.20
+    const commonLocations = getIntersection(profileA.locationEntities, profileB.locationEntities);
+    let locationScore = 0;
+    if (commonLocations.length > 0) {
+      const totalLocs = new Set([...profileA.locationEntities, ...profileB.locationEntities]).size;
+      locationScore = Math.min(1.0, (commonLocations.length * 2) / (totalLocs || 1));
+
+      for (const loc of commonLocations) {
+        sharedLocations.push(loc);
+        reasons.push(`Shared location / jurisdiction: "${loc.toUpperCase()}"`);
+      }
+    }
+
+    // 3. Shared Legal Sections & Acts - Weight 0.20
+    const commonSections = getIntersection(profileA.legalSections, profileB.legalSections);
+    let sectionScore = 0;
+    if (commonSections.length > 0) {
+      const totalSecs = new Set([...profileA.legalSections, ...profileB.legalSections]).size;
+      sectionScore = Math.min(1.0, (commonSections.length * 2) / (totalSecs || 1));
+
+      for (const sec of commonSections) {
+        sharedSections.push(sec);
+        reasons.push(`Matching legal statute / offence section: "${sec.toUpperCase()}"`);
+      }
+    }
+
+    // 4. Semantic Embedding Proximity - Weight 0.25
+    let semanticScore = 0;
+    if (profileA.embeddingVectors.length > 0 && profileB.embeddingVectors.length > 0) {
+      let maxSim = 0;
+      for (const vA of profileA.embeddingVectors) {
+        for (const vB of profileB.embeddingVectors) {
+          const sim = vectorService.calculateCosineSimilarity(vA, vB);
+          if (sim > maxSim) maxSim = sim;
+        }
+      }
+      semanticScore = Math.max(0, maxSim);
+      if (semanticScore >= 0.60) {
+        reasons.push(`High semantic similarity across evidentiary documents (${Math.round(semanticScore * 100)}% text alignment)`);
+      }
+    }
+
+    // Rebalance weights if vectors are absent in either case
+    let rawScore = 0;
+    if (profileA.embeddingVectors.length > 0 && profileB.embeddingVectors.length > 0) {
+      rawScore = (entityScore * 0.35) + (locationScore * 0.20) + (sectionScore * 0.20) + (semanticScore * 0.25);
+    } else {
+      rawScore = (entityScore * 0.45) + (locationScore * 0.30) + (sectionScore * 0.25);
+    }
+
+    const similarityScore = Math.round(Math.min(1.0, Math.max(0, rawScore)) * 100) / 100;
+
+    let confidenceLevel = 'low';
+    let relationshipType = 'possible_connection';
+    if (similarityScore >= 0.70) {
+      confidenceLevel = 'high';
+      relationshipType = 'strongly_related';
+    } else if (similarityScore >= 0.45) {
+      confidenceLevel = 'medium';
+      relationshipType = 'potentially_related';
+    }
+
+    return {
+      similarityScore,
+      confidenceLevel,
+      relationshipType,
+      reasons,
+      sharedEntities,
+      sharedLocations,
+      sharedSections,
+    };
+  }
+
+  /**
+   * 5. CASE-TO-CASE RELATIONSHIP DISCOVERY WITH STRICT RBAC
+   * Identifies meaningful connections between authorized cases
+   */
+  async getCaseRelationships(caseId, user, threshold = 0.25) {
+    // Clearance boundary check on target case
+    await this.verifyCaseAccess(caseId, user);
+
+    const targetProfile = await this.buildCaseProfile(caseId);
+    if (!targetProfile) {
+      throw new ApiError(HTTP_STATUS.NOT_FOUND, 'Target case not found');
+    }
+
+    // Strict Server-Side Scope for comparison pool
+    const query = { _id: { $ne: caseId } };
+    if (user.role === ROLES.OFFICER) {
+      const officerId = user._id ? user._id.toString() : user.id;
+      query.$or = [
+        { leadOfficer: officerId },
+        { assignedOfficers: officerId },
+      ];
+    }
+
+    const candidateCases = await Case.find(query).select('_id caseNumber title jurisdiction status').lean();
+    const relationships = [];
+
+    for (const cand of candidateCases) {
+      const candProfile = await this.buildCaseProfile(cand._id);
+      if (!candProfile) continue;
+
+      const simResult = this.calculateProfileSimilarity(targetProfile, candProfile);
+
+      // Enforce documented noise filter threshold
+      if (simResult.similarityScore >= threshold && simResult.reasons.length > 0) {
+        relationships.push({
+          targetCaseId: candProfile.caseId,
+          caseNumber: candProfile.caseNumber,
+          title: candProfile.title,
+          jurisdiction: candProfile.jurisdiction,
+          status: candProfile.status,
+          similarityScore: simResult.similarityScore,
+          similarityPercentage: Math.round(simResult.similarityScore * 100),
+          confidenceLevel: simResult.confidenceLevel,
+          relationshipType: simResult.relationshipType,
+          reasons: simResult.reasons,
+          sharedEntities: simResult.sharedEntities,
+          sharedLocations: simResult.sharedLocations,
+          sharedSections: simResult.sharedSections,
+        });
+      }
+    }
+
+    relationships.sort((a, b) => b.similarityScore - a.similarityScore);
+
+    return {
+      caseId,
+      totalRelatedCases: relationships.length,
+      threshold,
+      relationships,
+    };
+  }
+
+  /**
+   * 6. COMBINED CASE INTELLIGENCE
    */
   async getCaseIntelligence(caseId, user) {
-    const [timelineRes, entitiesRes] = await Promise.all([
+    const [timelineRes, entitiesRes, relationshipsRes] = await Promise.all([
       this.generateCaseTimeline(caseId, user),
       this.extractCaseEntities(caseId, user),
+      this.getCaseRelationships(caseId, user),
     ]);
 
     return {
@@ -416,9 +690,11 @@ class IntelligenceService {
         uncertainEventsCount: timelineRes.uncertainEvents.length,
         totalEntities: entitiesRes.totalEntities,
         multiDocumentEntitiesCount: entitiesRes.multiDocumentEntitiesCount,
+        totalRelatedCases: relationshipsRes.totalRelatedCases,
       },
       timeline: timelineRes.timeline,
       entities: entitiesRes.entities,
+      relationships: relationshipsRes.relationships,
     };
   }
 }
