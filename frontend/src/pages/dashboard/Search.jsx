@@ -30,7 +30,7 @@ export function Search() {
   const fetchCases = async () => {
     try {
       const res = await caseService.getCases({});
-      setCases(res.data?.cases || []);
+      setCases(Array.isArray(res.data) ? res.data : res.data?.cases || []);
     } catch (err) {
       console.error('Failed to fetch cases for filter', err);
     }

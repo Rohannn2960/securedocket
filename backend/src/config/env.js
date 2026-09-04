@@ -44,6 +44,7 @@ function validateEnv() {
     gemini: {
       apiKey: process.env.GEMINI_API_KEY || '',
       modelName: process.env.GEMINI_MODEL_NAME || 'gemini-3.6-flash',
+      embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001',
       confidenceThreshold: parseFloat(process.env.OCR_CONFIDENCE_THRESHOLD) || 0.80,
     },
 
